@@ -14,22 +14,19 @@ The **Calendar - Import ICS** module (`calendar_import_ics`) adds a wizard that 
 
 <Steps>
   <Step title="Open the wizard">
-    In the **Calendar** app, go to **Configuration → Import ICS File**. The import dialog opens as a pop-up form.
+    In the **Calendar** app, go to **Configuration → Import Ics File**. The import dialog opens as a pop-up form.
   </Step>
   <Step title="Upload your .ics file">
     Click the upload control next to **ICS File** and select your `.ics` file. The file must have a `.ics` extension — the wizard validates this before processing any data.
   </Step>
   <Step title="Set optional date filters">
-    Enter values in **Start Import Date** and/or **End Import Date** to restrict which events are processed. Only events whose `DTSTART` falls on or after the start date **and** whose `DTEND` falls on or before the end date will be imported. Leave both fields empty to import every event in the file.
+    Enter values in **Start Import Date** and **End Import Date** to restrict which events are processed. Both fields must be provided for the filter to take effect — if either is absent, all events in the file are imported regardless of date. When both are set, only events whose `DTSTART` falls on or after the start date and whose `DTEND` falls on or before the end date are imported.
   </Step>
   <Step title="Choose whether to remove stale events">
     The **Remove old events?** toggle is enabled by default. When checked, any event that was previously imported (identified by a non-empty `event_identifier`) but is absent from the current file will be cleaned up after the import finishes.
   </Step>
-  <Step title="Select a partner">
-    The **Partner** field defaults to the currently logged-in user's partner. Change it to link imported events to a different contact if needed.
-  </Step>
   <Step title="Run the import">
-    Click **Import**. The wizard parses the file line by line, converts timezone-aware datetimes to UTC, and creates or updates `calendar.event` records accordingly.
+    Click **Import**. The wizard parses the file line by line, converts timezone-aware datetimes to UTC, and creates or updates `calendar.event` records accordingly. The partner is automatically set to the currently logged-in user's partner if not already specified.
   </Step>
 </Steps>
 
@@ -40,19 +37,19 @@ The **Calendar - Import ICS** module (`calendar_import_ics`) adds a wizard that 
 </ParamField>
 
 <ParamField path="import_start_date" type="Date" default="None">
-  Optional lower bound filter. When set, only events whose `DTSTART` date is on or after this value are imported. If either `import_start_date` or `import_end_date` is absent, the date filter is skipped entirely and all events in the file are considered.
+  Optional lower bound filter. When set together with `import_end_date`, only events whose `DTSTART` date is on or after this value are imported. If either `import_start_date` or `import_end_date` is absent, the date filter is skipped entirely and all events in the file are considered.
 </ParamField>
 
 <ParamField path="import_end_date" type="Date" default="None">
-  Optional upper bound filter. When set, only events whose `DTEND` date is on or before this value are imported. Works in conjunction with `import_start_date` — both fields must be provided for the filter to take effect.
-</ParamField>
-
-<ParamField path="partner_id" type="Many2one (res.partner)" default="Current user's partner">
-  The partner to associate with imported events. Defaults to the logged-in user's partner via a `default_get` fallback inside `button_import`. The partner is added to each event's `partner_ids` many2many field.
+  Optional upper bound filter. When set together with `import_start_date`, only events whose `DTEND` date is on or before this value are imported. Both fields must be provided for the filter to take effect.
 </ParamField>
 
 <ParamField path="do_remove_old_event" type="Boolean" default="True">
   When enabled, events that carry a non-empty `event_identifier` (i.e. were previously imported) but whose UID is not present in the current file are cleaned up after the import. The cleanup first removes the selected partner from the event's `partner_ids`; if the event then has no remaining attendees, the record is fully deleted.
+</ParamField>
+
+<ParamField path="partner_id" type="Many2one (res.partner)" default="Current user's partner">
+  The partner to associate with imported events. Not shown in the wizard form — it is set automatically inside `button_import()` to the logged-in user's partner when no value has been provided. The partner is added to each event's `partner_ids` many2many field.
 </ParamField>
 
 ## ICS Field Mapping
@@ -60,7 +57,7 @@ The **Calendar - Import ICS** module (`calendar_import_ics`) adds a wizard that 
 The wizard parses raw iCalendar lines and maps the following properties to `calendar.event` fields:
 
 | ICS Field | Odoo Field              | Notes                                      |
-|-----------|-------------------------|--------------------------------------------|
+|-----------|-------------------------|---------------------------------------------|
 | `SUMMARY` | `calendar.event.name`   | Event title                                |
 | `DTSTART` | `calendar.event.start`  | Converted to UTC if `TZID=` is present     |
 | `DTEND`   | `calendar.event.stop`   | Converted to UTC if `TZID=` is present     |

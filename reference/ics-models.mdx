@@ -24,7 +24,7 @@ The `calendar_export_ics` and `calendar_import_ics` modules add two transient wi
   Optional upper bound for event start dates. When set, only events with `start ≤ export_end_date` are exported. Combined with a lower bound of today, this produces a date-ranged export.
 </ParamField>
 
-<ParamField path="export_ics_file" type="Binary (readonly)">
+<ParamField path="export_ics_file" type="Binary">
   The generated `.ics` content, base64-encoded. Populated by `button_export()` → `generate_ics_content()`. Empty until the export button is clicked.
 </ParamField>
 
@@ -166,7 +166,7 @@ Creates a new `calendar.event` with:
 
 ---
 
-#### `_update_event(record, ics_event, event_start_date, event_end_date)`
+#### `_update_event(event, ics_event, event_start_date, event_end_date)`
 
 ```python
 def _update_event(self, event, ics_event, event_start_date, event_end_date):

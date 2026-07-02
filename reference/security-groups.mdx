@@ -111,20 +111,20 @@ Record rules add row-level filtering on top of the ACL table above. All multi-co
 
 #### Multi-company rules (global)
 
-| Rule name | Model | Filter |
+| Rule name | Model | Domain |
 |-----------|-------|--------|
-| Resource booking type multi company rule | `resource.booking.type` | `company_id in user.company_ids + [False]` |
-| Resource booking multi company rule | `resource.booking` | `type_id.company_id in user.company_ids + [False]` |
+| Resource booking type multi company rule | `resource.booking.type` | `('company_id', 'in', company_ids + [False])` |
+| Resource booking multi company rule | `resource.booking` | `('type_id.company_id', 'in', company_ids + [False])` |
 
-A booking type with no company (`company_id = False`) is visible to users of **all** companies.
+`company_ids` is an Odoo built-in variable in record-rule evaluation context that holds the IDs of all companies the current user belongs to. A booking type with no company (`company_id = False`) is visible to users of **all** companies.
 
 #### Per-group record rules on `resource.booking`
 
 | Rule name | Applies to | Domain |
 |-----------|-----------|--------|
-| Resource booking portal rule | `base.group_portal` | `partner_ids child_of user.partner_id` **OR** `message_partner_ids child_of user.partner_id` |
-| Resource booking user rule | `resource_booking.group_user` | attendee **OR** follower **OR** `combination_id.resource_ids.user_id = user` |
-| Resource booking manager rule | `resource_booking.group_manager` | `(1 = 1)` — unrestricted |
+| Resource booking portal rule | `base.group_portal` | `\|` `('partner_ids', 'child_of', user.partner_id.ids)` **OR** `('message_partner_ids', 'child_of', user.partner_id.ids)` |
+| Resource booking user rule | `resource_booking.group_user` | `\|` `\|` `('partner_ids', 'child_of', user.partner_id.ids)` **OR** `('message_partner_ids', 'child_of', user.partner_id.ids)` **OR** `('combination_id.resource_ids.user_id', 'in', user.ids)` |
+| Resource booking manager rule | `resource_booking.group_manager` | `(1, '=', 1)` — unrestricted |
 
 **What each rule means in practice:**
 

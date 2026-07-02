@@ -62,7 +62,7 @@ holiday_model = env['calendar.public.holiday']
 
 # Check if a specific date is a public holiday for a partner
 is_holiday = holiday_model.is_public_holiday(
-    date(2024, 12, 25), partner_id=partner
+    date(2024, 12, 25), partner_id=partner.id
 )
 
 # Get all holidays in a date range for a partner
@@ -70,7 +70,7 @@ holidays = holiday_model.get_holidays_list(
     year=2024,
     start_dt=date(2024, 1, 1),
     end_dt=date(2024, 12, 31),
-    partner_id=partner
+    partner_id=partner.id
 )
 ```
 
@@ -91,7 +91,7 @@ This allows you to model regional holidays (e.g., a public holiday observed only
 | Field      | Value                                                                                           |
 |------------|-------------------------------------------------------------------------------------------------|
 | Version    | 18.0.1.0.1                                                                                      |
-| Authors    | Michael Telahun Makonnen, Tecnativa, Camptocamp, Odoo Community Association (OCA)               |
+| Authors    | Michael Telahun Makonnen, Tecnativa, Fekete Mihai (Forest and Biomass Services Romania), Druidoo, Camptocamp, Odoo Community Association (OCA) |
 | License    | AGPL-3                                                                                          |
 | Depends on | `calendar`                                                                                      |
 | Repository | [OCA/calendar](https://github.com/OCA/calendar)                                                 |

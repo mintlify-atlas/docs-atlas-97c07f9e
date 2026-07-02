@@ -33,7 +33,7 @@ Understanding these four building blocks makes the rest of the module intuitive.
 
 **Booking** — a single reservation that links a requester partner (or multiple attendees), one resource combination, and a specific date-time interval. Creating a booking and setting a start time automatically creates a linked `calendar.event`, adding all relevant parties as attendees.
 
-**Availability Engine** — the logic that intersects the booking type's work calendar with the individual work calendars of every resource in a combination. It respects calendar leaves, honors public holidays (when `hr_holidays` is installed), and excludes time already occupied by other confirmed calendar events. This engine powers both the slot picker in the portal and the conflict-detection constraint that fires on every save.
+**Availability Engine** — the logic that intersects the booking type's work calendar with the individual work calendars of every resource in a combination. It respects calendar leaves and excludes time already occupied by other confirmed calendar events. This engine powers both the slot picker in the portal and the conflict-detection constraint that fires on every save.
 
 ## Booking Lifecycle
 
@@ -62,12 +62,6 @@ Resource Booking requires the following Odoo modules to be present in your insta
 - `resource` — `resource.resource` and `resource.calendar` models
 - `web_calendar_slot_duration` — calendar view enhancement that renders slots at the configured duration
 
-**Optional modules** (enable extra features when installed)
-
-- `hr` — links `resource.resource` records to employees
-- `hr_holidays` — respects employee time-off leaves in availability calculation
-- `mrp` — enables booking of manufacturing resources
-
 <Warning>
   The `web_calendar_slot_duration` module is **required** and must be installed alongside Resource Booking. It is not part of Odoo's standard addons and must be sourced from the OCA `web` repository. The calendar slot view will not function correctly without it.
 </Warning>
@@ -82,5 +76,5 @@ Resource Booking requires the following Odoo modules to be present in your insta
 | Category | Appointments |
 | Authors | Tecnativa, Odoo Community Association (OCA) |
 | Maintainers | pedrobaeza, ows-cloud |
-| License | AGPL-3.0 |
+| License | AGPL-3 |
 | Repository | [OCA/calendar](https://github.com/OCA/calendar) |

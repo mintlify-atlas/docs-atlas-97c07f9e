@@ -224,7 +224,7 @@ The module extends four Odoo base models to integrate with the booking engine.
 |-------|------|-------------|
 | `resource_booking_ids` | One2many → resource.booking | Reverse relation to the booking(s) using this event. Enforced as effectively one-to-one by the `UNIQUE(meeting_id)` SQL constraint on `resource.booking`. |
 
-**Constraint `_check_bookings_scheduling()`** — Calls `resource.booking._check_scheduling()` whenever the event's `start` or `stop` changes, keeping schedules valid from both sides.
+**Constraint `_check_bookings_scheduling()`** — Decorated with `@api.constrains("resource_booking_ids", "start", "stop")`. Calls `resource.booking._check_scheduling()` whenever the event's `resource_booking_ids`, `start`, or `stop` changes, keeping schedules valid from both sides.
 
 **Modification guard** — `write()` and `unlink()` call `_validate_booking_modifications()`, which raises `ValidationError` if any linked booking has `is_modifiable = False` (i.e., the modification deadline has passed and the caller is not a manager).
 
@@ -249,7 +249,7 @@ The busy-interval logic (`_calendar_event_busy_intervals()`) considers an event 
 
 <Expandable title="Extensions to resource.resource">
 
-**New method `is_available(start_dt, end_dt, domain, tz)`** — Convenience helper that returns `True` if the resource has a contiguous work interval covering the entire `[start_dt, end_dt]` window. Internally calls `calendar._work_intervals_batch()` with `analyzing_booking=-1` context to count existing bookings as busy time.
+**New method `is_available(start_dt, end_dt, domain=None, tz=None)`** — Convenience helper that returns `True` if the resource has a contiguous work interval covering the entire `[start_dt, end_dt]` window. Internally calls `calendar._work_intervals_batch()` with `analyzing_booking=-1` context to count existing bookings as busy time.
 
 </Expandable>
 

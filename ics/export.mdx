@@ -10,16 +10,16 @@ The **Calendar - Export ICS** module (`calendar_export_ics`) adds a wizard to Od
 
 <Steps>
   <Step title="Open the wizard">
-    In the **Calendar** app, go to **Configuration → Export to ICS File**. A dialog opens immediately — no list view is required.
+    In the **Calendar** app, go to **Configuration → Export to Ics File**. A dialog opens immediately — no list view is required.
   </Step>
   <Step title="Select a partner">
-    The **Partner** field defaults to the currently logged-in user's partner. ERP managers can change this to any partner in the system. Regular users always export for themselves and do not see this field.
+    The **Partner** field defaults to the currently logged-in user's partner (set via `default_get`). ERP managers can change this to any partner in the system. Regular users always export for themselves and do not see this field.
   </Step>
   <Step title="Set an optional end date">
     Enter a value in **End Export Date** to limit the export to events whose start date falls on or before that date. Leave it empty to export all future events with no upper bound.
   </Step>
   <Step title="Generate the file">
-    Click **Generate ICS File**. The wizard calls `button_export()`, builds the iCalendar payload, and replaces the form with a download widget.
+    Click **Generate ICS File**. The wizard calls `button_export()`, builds the iCalendar payload, and re-opens the same wizard form with a download widget in place of the input fields.
   </Step>
   <Step title="Download the file">
     Click the download button next to the generated file. The file is named after today's date — for example, `2024-05-22_calendar.ics` — and contains all matching events in a single iCalendar object.
@@ -28,10 +28,10 @@ The **Calendar - Export ICS** module (`calendar_export_ics`) adds a wizard to Od
 
 ## What Gets Exported
 
-The wizard searches `calendar.event` with the following filters applied in order:
+The wizard searches `calendar.event` with the following filters:
 
-- **Start date ≥ today** — only upcoming events are included; past events are always excluded.
 - **Start date ≤ `export_end_date`** — applied only when the field is set; otherwise the range is open-ended.
+- **Start date ≥ today** — only upcoming events are included; past events are always excluded.
 - **`partner_ids` contains the selected partner** — events are matched by checking that the chosen partner appears in the event's attendee list.
 
 Once the matching events are found, Odoo's built-in `_get_ics_file()` method generates one iCalendar document per event. The module then uses the `vobject` library to merge every `VEVENT` component into a single `VCALENDAR` object, which is Base64-encoded and stored in `export_ics_file`.
@@ -43,7 +43,7 @@ Once the matching events are found, Odoo's built-in `_get_ics_file()` method gen
 ## Wizard Fields
 
 <ParamField path="partner_id" type="Many2one (res.partner)" default="Current user's partner">
-  The partner whose calendar events are exported. Visible only to users in the `base.group_erp_manager` group; all other users always export their own events.
+  The partner whose calendar events are exported. Visible only to users in the `base.group_erp_manager` group; all other users always export their own events. Defaults to the current user's partner via `default_get`.
 </ParamField>
 
 <ParamField path="export_end_date" type="Date" default="None (no upper bound)">
@@ -75,7 +75,7 @@ wizard = env['calendar.export.ics'].create({
 wizard.button_export()
 
 # Retrieve the Base64-encoded .ics content
-ics_content = wizard.export_ics_file  # bytes, Base64-encoded
+ics_content = wizard.export_ics_file   # bytes, Base64-encoded
 filename    = wizard.export_ics_filename  # e.g. '2024-05-22_calendar.ics'
 ```
 

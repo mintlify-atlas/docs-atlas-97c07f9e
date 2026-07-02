@@ -24,7 +24,7 @@ This page covers the full lifecycle of a resource booking: creating the record, 
   <Step title="Assign a combination or leave it to Auto Assign">
     By default **Auto Assign** (`combination_auto_assign`) is checked. When a start time is set, the system automatically picks the best available combination based on the booking type's assignment policy.
 
-    To override this, uncheck **Auto Assign** and manually select a **Resources Combination**. Only combinations linked to the selected booking type appear in the dropdown.
+    To override this, uncheck **Auto assigned** and manually select a **Resources Combination**. Only combinations linked to the selected booking type appear in the dropdown.
   </Step>
   <Step title="Save">
     Click **Save**. The booking is now in the `pending` state. If you set a start time before saving, the system immediately validates availability and creates the linked `calendar.event`.
@@ -160,4 +160,4 @@ Setting `calendar_event_id` on the activity also enables the **Re-schedule** but
 
 ### Activity feedback
 
-When a booking activity is marked as done, Odoo appends the feedback text to the booking's chatter log (standard `mail.activity.mixin` behavior), making it easy to track any notes left during or after the appointment.
+When a booking activity is marked as done with feedback text, the module appends that feedback to the booking's **Description** field (`description`). This keeps a persistent HTML record of notes on the booking record itself, in addition to the standard activity log entry.

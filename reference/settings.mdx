@@ -48,7 +48,7 @@ The `calendar_export_ics` module has **no global settings panel**. All options a
   The partner whose calendar events will be exported. Defaults to the current user's partner.
 </ParamField>
 
-<ParamField body="date_end" type="Date">
+<ParamField body="export_end_date" type="Date">
   Upper boundary for the export window. Only events with a start date on or before this date are included. Leave empty to export all future events.
 </ParamField>
 
@@ -68,24 +68,24 @@ The `calendar_import_ics` module has **no global settings panel**. All options a
 
 ### Wizard fields (`calendar.import.ics`)
 
-<ParamField body="ics_file" type="Binary">
+<ParamField body="import_ics_file" type="Binary" required>
   The `.ics` file to import. Must be a valid iCalendar file (RFC 5545).
 </ParamField>
 
-<ParamField body="date_start" type="Date">
-  Import only events whose start date is on or after this value. Leave empty to import all events.
+<ParamField body="import_start_date" type="Date">
+  Import only events whose start date is on or after this value. Both `import_start_date` **and** `import_end_date` must be set to apply date filtering — if either is left empty, all events in the file are imported.
 </ParamField>
 
-<ParamField body="date_end" type="Date">
-  Import only events whose start date is on or before this value. Leave empty to import all events.
+<ParamField body="import_end_date" type="Date">
+  Import only events whose end date is on or before this value. Both `import_start_date` **and** `import_end_date` must be set to apply date filtering — if either is left empty, all events in the file are imported.
 </ParamField>
 
 <ParamField body="partner_id" type="Many2one → res.partner">
-  Imported events are associated with this partner.
+  Imported events are associated with this partner. Defaults to the current user's partner if not set.
 </ParamField>
 
-<ParamField body="remove_old_events" type="Boolean">
-  When enabled, any existing calendar events for the selected partner that fall within the specified date range are deleted before the new events are imported. Use with caution in shared calendars.
+<ParamField body="do_remove_old_event" type="Boolean">
+  When enabled, any previously imported calendar events for the selected partner (identified by their iCalendar UID) that are not present in the current import file and fall within the specified date range are removed. Defaults to `True`.
 </ParamField>
 
 Timezone handling during import relies on `pytz` for conversion and `python-dateutil` for date parsing. See [Python Package Requirements](#python-package-requirements).

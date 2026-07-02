@@ -69,15 +69,13 @@ Some modules require third-party Python packages that must be present in your Od
 
 | Module | Python package | Purpose |
 |---|---|---|
-| `calendar_export_ics` | `vobject` | Generates standards-compliant iCalendar (`.ics`) output |
-| `calendar_import_ics` | `vobject` | Parses uploaded `.ics` files |
 | `calendar_public_holiday` | `openupgradelib` | Handles data migration during module upgrades |
 | `resource_booking` | `cssselect` | Used internally by the booking engine (implicit dependency) |
 
 Install any missing packages into the same Python environment that runs Odoo:
 
 ```bash
-pip install vobject openupgradelib cssselect
+pip install openupgradelib cssselect
 ```
 
 ## Module Dependencies (Odoo Core)

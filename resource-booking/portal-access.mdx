@@ -12,11 +12,11 @@ The portal controller registers the following HTTP routes. Routes marked **publi
 
 | Route | Auth | Description |
 |-------|------|-------------|
-| `/my/bookings` | user | Paginated list of all bookings the logged-in portal user can access. |
+| `/my/bookings` | user | Paginated list of all bookings the logged-in portal user can access. Pagination via `/my/bookings/page/<int:page>`. |
 | `/my/bookings/<id>` | public (token) | Booking detail page showing the current state and available actions. |
 | `/my/bookings/<id>/schedule` | public (token) | Interactive monthly calendar slot picker for the current month. |
 | `/my/bookings/<id>/schedule/<year>/<month>` | public (token) | Calendar slot picker for a specific year and month (for navigation). |
-| `/my/bookings/<id>/confirm?when=<iso_datetime>` | public (token) | Confirms a specific ISO-formatted datetime slot and moves the booking to `scheduled`. |
+| `/my/bookings/<id>/confirm?when=<iso_datetime>` | public (token) | Sets the booking start to the given ISO datetime, calls `action_confirm()`, and moves the booking to `confirmed`. |
 | `/my/bookings/<id>/cancel` | public (token) | Cancels the booking, archives the record, and invalidates the token. |
 
 ---
@@ -56,7 +56,7 @@ This context flag ensures that `is_modifiable` is evaluated as a non-manager (en
 
 <Steps>
   <Step title="Customer receives the booking URL">
-    The requester is sent an email (triggered when a resource combination is assigned) containing a link to their booking detail page at `/my/bookings/<id>?access_token=<token>`.
+    A backend user shares the tokenized URL with the requester — for example by copying it from the **Action → Open in Portal** button on the booking form. The URL points to the booking detail page at `/my/bookings/<id>?access_token=<token>`.
   </Step>
   <Step title="Open the availability calendar">
     The customer clicks **Schedule** (or the link navigates directly to `/schedule`). The server calls `_get_available_slots()` and renders a monthly calendar grid with free slots highlighted. Only slots that fit within the booking type's work calendar **and** at least one available resource combination are shown.
@@ -67,8 +67,8 @@ This context flag ensures that `is_modifiable` is evaluated as a non-manager (en
   <Step title="Confirm the slot">
     The `/confirm` handler parses the ISO datetime, converts it from the calendar timezone to UTC, and sets `booking.start`. On success, `action_confirm()` is called to mark the requester's attendance as accepted.
   </Step>
-  <Step title="Booking is now scheduled">
-    The booking moves to `scheduled` (or immediately to `confirmed` if the requester's attendee record is auto-accepted). The customer is redirected back to the booking detail page at `/my/bookings/<id>`.
+  <Step title="Booking is now confirmed">
+    Because `action_confirm()` marks the requester's attendee record as accepted, the booking moves directly to `confirmed` state. The customer is redirected back to the booking detail page at `/my/bookings/<id>`.
   </Step>
 </Steps>
 
