@@ -1,0 +1,66 @@
+---
+title: "OCA Calendar Add-ons for Odoo 18"
+sidebarTitle: "Introduction"
+description: "OCA Calendar is a collection of Odoo 18.0 community add-ons that extend the built-in Calendar module with six independent enhancements."
+---
+
+OCA Calendar is an open-source repository maintained by the [Odoo Community Association (OCA)](https://odoo-community.org/) that extends Odoo 18.0's built-in Calendar module. It ships six independent add-ons covering visual enhancements, ICS file interoperability, public holiday management, and full resource-booking workflows — all released under the AGPL-3.0 license and continuously tested against Odoo 18.0.
+
+## Available Modules
+
+<CardGroup cols={2}>
+  <Card
+    title="Event Type Color"
+    icon="palette"
+    href="/calendar-enhancements/event-type-color"
+  >
+    Colorize the calendar view by assigning a color to each event type, making it easy to distinguish event categories at a glance.
+  </Card>
+  <Card
+    title="Description Layout"
+    icon="align-left"
+    href="/calendar-enhancements/description-layout"
+  >
+    Moves the description field onto its own dedicated tab in the calendar event form, keeping the main view clean and focused.
+  </Card>
+  <Card
+    title="Public Holidays"
+    icon="calendar-day"
+    href="/calendar-enhancements/public-holidays"
+  >
+    Manage country- and state-level public holiday calendars, and mark days off directly on Odoo's calendar views.
+  </Card>
+  <Card
+    title="Export to ICS"
+    icon="file-export"
+    href="/ics/export"
+  >
+    Export any selection of Odoo calendar events to a standard `.ics` file that can be imported into any calendar application.
+  </Card>
+  <Card
+    title="Import from ICS"
+    icon="file-import"
+    href="/ics/import"
+  >
+    Upload a `.ics` file and import its events directly into your Odoo calendar, preserving dates, times, and descriptions.
+  </Card>
+  <Card
+    title="Resource Booking"
+    icon="bookmark"
+    href="/resource-booking/overview"
+  >
+    A full appointment and resource-booking engine — define bookable resource combinations, expose a customer-facing portal, and track reservations on the calendar.
+  </Card>
+</CardGroup>
+
+## Compatibility
+
+All modules in this repository target **Odoo 18.0** and are versioned with the `18.0.x.y.z` scheme. They are developed and maintained by the OCA community, with individual module maintainers listed in each `__manifest__.py`. Translations are coordinated through the [OCA Weblate platform](https://translation.odoo-community.org/engage/calendar-18-0/).
+
+<Note>
+  Every module in this repository is licensed under **AGPL-3.0**. Any code that links to or extends these modules must also comply with the AGPL-3.0 license terms. Review each module's `__manifest__.py` for the exact license key before deploying in a proprietary context.
+</Note>
+
+## Module Independence
+
+Each add-on in the OCA Calendar repository is self-contained and can be installed individually — there is no requirement to install all six at once. Unless the module documentation explicitly states a dependency on another OCA Calendar module, you can pick only the add-ons your project needs. The sole exception is **Resource Booking**, which requires the [`web_calendar_slot_duration`](https://github.com/OCA/web) OCA module from the OCA Web repository.

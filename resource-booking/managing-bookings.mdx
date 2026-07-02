@@ -1,0 +1,163 @@
+---
+title: "Creating and Managing Resource Bookings in Odoo"
+sidebarTitle: "Managing Bookings"
+description: "A complete guide to creating, scheduling, confirming, and canceling resource bookings in Odoo — from initial creation through the full booking lifecycle."
+---
+
+This page covers the full lifecycle of a resource booking: creating the record, assigning a resource combination, setting a time slot, confirming attendance, and canceling when necessary. It also explains the modification deadline, the automatic calendar event synchronization, and the activity integration that ties mail activities to booking dates.
+
+## Creating a Booking
+
+<Steps>
+  <Step title="Open the Bookings list">
+    Go to **Resource Bookings → Bookings**. Switch to **List** view if you want to see pending bookings as well as scheduled ones (the default Calendar view only shows bookings with a start time).
+  </Step>
+  <Step title="Click New">
+    Click **New** to open a blank booking form.
+  </Step>
+  <Step title="Select the Booking Type">
+    In the **Type** field, select the appropriate booking type. The duration, tags, reminders, location, and requester advice are all inherited from the type automatically.
+  </Step>
+  <Step title="Add the Requester(s)">
+    In the **Attendees** field (`partner_ids`), add one or more `res.partner` records. The first partner is treated as the primary requester and appears in the auto-generated booking name. All listed partners become attendees on the linked calendar event.
+  </Step>
+  <Step title="Assign a combination or leave it to Auto Assign">
+    By default **Auto Assign** (`combination_auto_assign`) is checked. When a start time is set, the system automatically picks the best available combination based on the booking type's assignment policy.
+
+    To override this, uncheck **Auto Assign** and manually select a **Resources Combination**. Only combinations linked to the selected booking type appear in the dropdown.
+  </Step>
+  <Step title="Save">
+    Click **Save**. The booking is now in the `pending` state. If you set a start time before saving, the system immediately validates availability and creates the linked `calendar.event`.
+  </Step>
+</Steps>
+
+### Auto-Assigning a Combination
+
+When `combination_auto_assign = True` and a `start` datetime is present, the system calls `_get_best_combination()`. This method:
+
+1. Prioritizes the currently assigned combination (if any), so an already-assigned combination is not evicted unless it becomes unavailable.
+2. Iterates through the booking type's combinations in the order defined by the assignment policy (`sorted` by sequence, or `random`).
+3. Returns the first combination whose availability intervals fully contain the requested `[start, stop]` interval.
+4. Raises a `ValidationError` in the portal context if no free combination exists.
+
+---
+
+## Scheduling a Booking
+
+Setting a **Start** datetime on a booking is the action that triggers scheduling. The system responds by:
+
+1. Computing `stop = start + duration` (in hours).
+2. Calling `_sync_meeting()`, which **lazily creates** a `calendar.event` if one does not exist, or **updates** the existing event's `start`, `stop`, and `duration` if the times have changed.
+3. Adding all requester partners and the user-type resources from the combination as calendar attendees.
+4. Running `_check_scheduling()` to validate the slot.
+
+### Removing a scheduled time
+
+Clearing the **Start** field (or clicking **Unschedule**) deletes the linked `calendar.event`. The booking returns to `pending` state without being canceled.
+
+### Conflict detection
+
+The `_check_scheduling()` constraint fires on every save of a scheduled booking. It raises a `ValidationError` if:
+
+- The booking has a meeting but **no resources** in its combination.
+- The `[start, stop]` interval does not fit within the intersection of the booking type's work calendar and each member resource's work calendar.
+- The combination is already occupied by another confirmed calendar event during the requested time.
+
+```python
+# Simplified: raises ValidationError if the slot is outside available intervals
+if not _availability_is_fitting(available_intervals, start_dt, end_dt):
+    raise ValidationError(...)
+```
+
+---
+
+## Confirming a Booking
+
+A booking reaches the `confirmed` state automatically — no button press required. The state engine (`_compute_state`) sets `confirmed` when **both** of the following are true:
+
+1. A `meeting_id` exists (the booking is scheduled).
+2. At least one of the requester partners (`partner_ids`) appears as an attendee on the meeting with `state = 'accepted'`.
+
+### Manually triggering confirmation
+
+Backend users can call **Confirm** (`action_confirm`) to mark the requester attendees (and optionally the current user's attendance) as accepted. The portal `/confirm` route also calls this method after setting the start time.
+
+### Difference between `scheduled` and `confirmed`
+
+| State | Meeting exists? | Requester accepted? |
+|-------|----------------|---------------------|
+| `scheduled` | ✅ Yes | ❌ No |
+| `confirmed` | ✅ Yes | ✅ Yes |
+
+A booking stays in `scheduled` until the requester accepts the calendar invitation — either by clicking Accept in their email client or by the portal confirm route being called.
+
+---
+
+## Canceling a Booking
+
+<Steps>
+  <Step title="Open the booking">
+    Navigate to the booking you want to cancel.
+  </Step>
+  <Step title="Click Cancel (or call action_cancel)">
+    Click the **Cancel** button (or use **Action → Cancel** in the list view). The system calls `action_cancel()`, which:
+    - Calls `action_unschedule()` to delete the linked `calendar.event`.
+    - Sets `active = False` (archives the booking).
+    - Clears the `access_token` so any previously shared portal URL becomes invalid.
+  </Step>
+</Steps>
+
+The computed state immediately becomes `canceled` because `active = False`.
+
+To view canceled bookings, remove the default **Active** filter in the list view.
+
+---
+
+## Modification Deadline
+
+<Warning>
+  Once the modification deadline has passed, **non-manager users and portal users cannot reschedule or cancel a booking**. Only members of the **Resource Booking / Manager** security group can modify overdue bookings from the backend. Plan communications accordingly — send the portal link to requesters with enough lead time.
+</Warning>
+
+The `modifications_deadline` field on the booking type defines a cutoff window in hours before the booking start. The `is_modifiable` computed field evaluates to `False` for any non-manager user when `now > (start - modifications_deadline hours)`.
+
+### How it works
+
+```python
+anticipation = timedelta(hours=booking.type_id.modifications_deadline)
+deadline = booking.start - anticipation
+is_overdue = now > deadline
+# is_modifiable = False for non-managers when is_overdue is True
+```
+
+- **Portal users** always have `using_portal=True` in their context, so they are never treated as managers.
+- **Backend users** with the `resource_booking.group_manager` group bypass the deadline and can always modify any booking.
+- **Regular backend users** (group `resource_booking.group_user`) are also subject to the deadline.
+
+---
+
+## Activities
+
+Resource Booking integrates deeply with Odoo's mail activity system.
+
+### Custom activity type
+
+The module registers a custom mail activity type with `category = resource_booking`. Activities of this type can be scheduled directly from the booking's activity log.
+
+### Deadline synchronization
+
+When a mail activity is linked to a booking (via the `booking_id` field on `mail.activity`), its **deadline** is automatically kept in sync with the booking's `start` date. This happens on every `create` and `write` that touches `start` or `meeting_id`.
+
+```python
+def _sync_booking_activities_date(self):
+    for rec in self.filtered("booking_activity_ids"):
+        start = rec.start or (datetime.now() + relativedelta(years=1000))
+        rec.booking_activity_ids.date_deadline = start
+        rec.booking_activity_ids.calendar_event_id = rec.meeting_id
+```
+
+Setting `calendar_event_id` on the activity also enables the **Re-schedule** button in the Odoo activity block UI, letting users jump directly from an activity to the calendar event.
+
+### Activity feedback
+
+When a booking activity is marked as done, Odoo appends the feedback text to the booking's chatter log (standard `mail.activity.mixin` behavior), making it easy to track any notes left during or after the appointment.

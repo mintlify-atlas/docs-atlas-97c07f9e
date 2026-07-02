@@ -1,0 +1,238 @@
+---
+title: "OCA Calendar Settings and Configuration"
+sidebarTitle: "Settings"
+description: "A complete reference for every configuration option, wizard setting, and per-type parameter available across OCA Calendar modules in Odoo 18."
+---
+
+OCA Calendar does not add a unified settings panel to **Settings → Technical → Calendar**. Instead, configuration is distributed across individual module wizards, dedicated menu items, and per-record fields on booking types. This page documents every configurable option, where to find it in the UI, and the underlying model field.
+
+---
+
+## Calendar Event Type Color
+
+The `calendar_event_type_color` module stores its configuration entirely on the existing `calendar.event.type` model. There is no separate settings form.
+
+**Where to configure:** Calendar → Calendar Event Type *(visible to administrators only — see [Security Groups](./security-groups#event-type-color-security))*
+
+### Fields on `calendar.event.type`
+
+<ParamField body="color" type="Integer">
+  An integer index into Odoo's standard 12-color palette. Rendered in the UI via the `color_picker` widget. Set this field to control the background color used for all calendar events that belong to this type.
+
+  Default: `0` (no color / grey).
+</ParamField>
+
+<Tip>
+  Colors propagate automatically to the calendar view: every event tagged with a given type inherits that type's color. No additional configuration step is needed after saving the event type.
+</Tip>
+
+---
+
+## Calendar Event Description Layout
+
+The `calendar_event_description_layout` module applies a pure view override — it modifies how the event description is displayed in the calendar form. There are **no settings** to configure and no global options to toggle.
+
+The override is active as soon as the module is installed. Uninstalling the module restores the default Odoo layout.
+
+---
+
+## ICS Export Settings
+
+The `calendar_export_ics` module has **no global settings panel**. All options are per-export and entered in the wizard each time an export is performed.
+
+**Wizard location:** Calendar → Configuration → Export to ICS File
+
+### Wizard fields (`calendar.export.ics`)
+
+<ParamField body="partner_id" type="Many2one → res.partner">
+  The partner whose calendar events will be exported. Defaults to the current user's partner.
+</ParamField>
+
+<ParamField body="date_end" type="Date">
+  Upper boundary for the export window. Only events with a start date on or before this date are included. Leave empty to export all future events.
+</ParamField>
+
+The wizard produces a downloadable `.ics` file using the `vobject` Python library. The file is compatible with any RFC 5545–compliant calendar application (Google Calendar, Apple Calendar, Thunderbird, Outlook, etc.).
+
+<Note>
+  The `vobject` Python package must be installed in the Odoo server environment. See [Python Package Requirements](#python-package-requirements) below.
+</Note>
+
+---
+
+## ICS Import Settings
+
+The `calendar_import_ics` module has **no global settings panel**. All options are per-import and entered in the wizard.
+
+**Wizard location:** Calendar → Configuration → Import ICS File
+
+### Wizard fields (`calendar.import.ics`)
+
+<ParamField body="ics_file" type="Binary">
+  The `.ics` file to import. Must be a valid iCalendar file (RFC 5545).
+</ParamField>
+
+<ParamField body="date_start" type="Date">
+  Import only events whose start date is on or after this value. Leave empty to import all events.
+</ParamField>
+
+<ParamField body="date_end" type="Date">
+  Import only events whose start date is on or before this value. Leave empty to import all events.
+</ParamField>
+
+<ParamField body="partner_id" type="Many2one → res.partner">
+  Imported events are associated with this partner.
+</ParamField>
+
+<ParamField body="remove_old_events" type="Boolean">
+  When enabled, any existing calendar events for the selected partner that fall within the specified date range are deleted before the new events are imported. Use with caution in shared calendars.
+</ParamField>
+
+Timezone handling during import relies on `pytz` for conversion and `python-dateutil` for date parsing. See [Python Package Requirements](#python-package-requirements).
+
+<Warning>
+  Enabling **Remove old events** is irreversible. Deleted events cannot be recovered through the UI — only a database restore will bring them back.
+</Warning>
+
+---
+
+## Public Holiday Settings
+
+The `calendar_public_holiday` module has **no global settings panel** and no company-level toggles. All configuration is done by managing holiday set records directly.
+
+### Holiday sets
+
+**Location:** Calendar → Public Holidays → Public Holidays
+
+Each record on `calendar.public.holiday` represents one complete set of public holidays for a given year and country. Fields on this model include:
+
+<ParamField body="name" type="Char" required>
+  A descriptive name for the holiday set, e.g. `Public Holidays Germany 2025`.
+</ParamField>
+
+<ParamField body="year" type="Integer" required>
+  The calendar year this set covers.
+</ParamField>
+
+<ParamField body="country_id" type="Many2one → res.country">
+  The country for which these holidays apply. Together with `year`, this forms a uniqueness constraint — only one holiday set per year/country combination can exist.
+</ParamField>
+
+<ParamField body="line_ids" type="One2many → calendar.public.holiday.line">
+  The individual holiday entries (date + name) belonging to this set.
+</ParamField>
+
+<Note>
+  The database enforces a **unique constraint** on `(year, country_id)`. Attempting to create a second holiday set for the same year and country will raise a validation error.
+</Note>
+
+### Next-year wizard
+
+**Location:** Calendar → Public Holidays → Create Next Year Public Holidays
+
+The `calendar.public.holiday.next.year` wizard copies an existing holiday set forward by one year. It is available only to system administrators (see [Security Groups](./security-groups#public-holiday-security)).
+
+---
+
+## Resource Booking Settings
+
+Resource booking configuration lives on **Booking Type** records, not in a global settings panel.
+
+**Location:** Resource Booking → Configuration → Booking Types
+
+Each `resource.booking.type` record defines an independent set of booking rules. Changes to a type affect all future bookings of that type.
+
+### Booking type fields
+
+<ParamField body="name" type="Char" required>
+  The display name of the booking type, shown in portal and internal views.
+</ParamField>
+
+<ParamField body="duration" type="Float" required>
+  Default booking length, expressed in **hours** (e.g. `0.5` = 30 minutes, `1.0` = 1 hour). Every new booking of this type is pre-filled with this duration.
+
+  Default: `0.5`. Must be greater than zero (enforced by a SQL constraint).
+</ParamField>
+
+<ParamField body="slot_duration" type="Float" required>
+  Interval between available slot start times, in **hours**. Controls the granularity of the booking calendar shown to requesters.
+
+  Default: `0.5` (slots every 30 minutes).
+</ParamField>
+
+<ParamField body="modifications_deadline" type="Float" required>
+  Number of **hours before the booking start time** within which non-manager users are blocked from rescheduling or cancelling. Also used as the auto-cancellation deadline for unconfirmed bookings.
+
+  Default: `24` (one day).
+</ParamField>
+
+<ParamField body="combination_assignment" type="Selection" required>
+  Controls how the system auto-assigns a resource combination when a booking is created without a manual assignment.
+
+  | Value | Behaviour |
+  |-------|-----------|
+  | `sorted` | Always pick the first free combination (deterministic) |
+  | `random` | Pick any free combination at random |
+
+  Default: `random`. Has no effect when a combination is selected manually by a manager.
+</ParamField>
+
+<ParamField body="resource_calendar_id" type="Many2one → resource.calendar" required>
+  The **work calendar** (schedule) that defines which hours and days are available for booking. Slots outside this calendar are not offered to requesters.
+
+  Default: the company's default work calendar (`res.company.resource_calendar_id`).
+</ParamField>
+
+<ParamField body="requester_advice" type="Text">
+  Free-text instructions displayed to the requester both in the portal booking view and in invitation emails. Use this field to communicate preparation instructions, location details, or required materials.
+</ParamField>
+
+<ParamField body="company_id" type="Many2one → res.company">
+  The Odoo company that owns this booking type. Record rules filter booking types and their associated bookings so that users only see records belonging to their active company.
+
+  Default: the current user's company at creation time.
+</ParamField>
+
+### Multi-company isolation
+
+The `company_id` field on `resource.booking.type` drives two global record rules:
+
+- Booking types are visible only to users whose session company matches `company_id` (or where `company_id` is unset).
+- Bookings inherit their type's company scope — a booking is only visible when the user's session company matches the booking type's company.
+
+Setting `company_id` to an empty value makes a booking type available across **all** companies in the database.
+
+---
+
+## Python Package Requirements
+
+Several OCA Calendar modules depend on third-party Python packages that must be present in the Odoo server environment. The table below lists each package, the module that requires it, and how it is used.
+
+| Package | Required by | Purpose |
+|---------|------------|---------|
+| `vobject` | `calendar_export_ics` | Builds iCalendar objects and serialises them to `.ics` files (RFC 5545) |
+| `pytz` | `calendar_import_ics` | Converts event timestamps from the `.ics` file's declared timezone to UTC |
+| `python-dateutil` | `calendar_import_ics` | Parses date/time strings from iCalendar `DTSTART` / `DTEND` fields |
+| `openupgradelib` | `calendar_public_holiday` | Provides migration helpers used when upgrading from the legacy `hr_holidays_public` module |
+| `cssselect` | `resource_booking` | Used implicitly by the HTML processing stack in booking notifications |
+
+The repository ships a generated `requirements.txt` at the root of the `OCA/calendar` repository:
+
+```text
+# generated from manifests external_dependencies
+cssselect
+openupgradelib
+```
+
+<Note>
+  `vobject`, `pytz`, and `python-dateutil` are not listed in the generated `requirements.txt` because they are already included in the standard Odoo server environment. Install them separately only if your Odoo installation does not bundle them.
+</Note>
+
+<Tip>
+  To verify that all packages are available before installing a module, open an Odoo shell and run:
+
+  ```python
+  import vobject, pytz, dateutil, openupgradelib, cssselect
+  print("All packages available")
+  ```
+</Tip>

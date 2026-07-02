@@ -1,0 +1,110 @@
+---
+title: "Export Odoo Calendar Events to a Downloadable ICS File"
+sidebarTitle: "Export ICS"
+description: "Generate a downloadable .ics file of upcoming Odoo calendar events for any partner, ready to import into any standards-compliant calendar application."
+---
+
+The **Calendar - Export ICS** module (`calendar_export_ics`) adds a wizard to Odoo's Calendar app that lets you produce a standards-compliant `.ics` file containing upcoming events for a chosen partner. The file can then be imported into Google Calendar, Apple Calendar, Outlook, or any other application that supports the iCalendar format.
+
+## Using the Export Wizard
+
+<Steps>
+  <Step title="Open the wizard">
+    In the **Calendar** app, go to **Configuration → Export to ICS File**. A dialog opens immediately — no list view is required.
+  </Step>
+  <Step title="Select a partner">
+    The **Partner** field defaults to the currently logged-in user's partner. ERP managers can change this to any partner in the system. Regular users always export for themselves and do not see this field.
+  </Step>
+  <Step title="Set an optional end date">
+    Enter a value in **End Export Date** to limit the export to events whose start date falls on or before that date. Leave it empty to export all future events with no upper bound.
+  </Step>
+  <Step title="Generate the file">
+    Click **Generate ICS File**. The wizard calls `button_export()`, builds the iCalendar payload, and replaces the form with a download widget.
+  </Step>
+  <Step title="Download the file">
+    Click the download button next to the generated file. The file is named after today's date — for example, `2024-05-22_calendar.ics` — and contains all matching events in a single iCalendar object.
+  </Step>
+</Steps>
+
+## What Gets Exported
+
+The wizard searches `calendar.event` with the following filters applied in order:
+
+- **Start date ≥ today** — only upcoming events are included; past events are always excluded.
+- **Start date ≤ `export_end_date`** — applied only when the field is set; otherwise the range is open-ended.
+- **`partner_ids` contains the selected partner** — events are matched by checking that the chosen partner appears in the event's attendee list.
+
+Once the matching events are found, Odoo's built-in `_get_ics_file()` method generates one iCalendar document per event. The module then uses the `vobject` library to merge every `VEVENT` component into a single `VCALENDAR` object, which is Base64-encoded and stored in `export_ics_file`.
+
+<Note>
+  The `vobject` Python package must be installed in your Odoo environment. Add it to your `requirements.txt` or install it with `pip install vobject` before activating this module.
+</Note>
+
+## Wizard Fields
+
+<ParamField path="partner_id" type="Many2one (res.partner)" default="Current user's partner">
+  The partner whose calendar events are exported. Visible only to users in the `base.group_erp_manager` group; all other users always export their own events.
+</ParamField>
+
+<ParamField path="export_end_date" type="Date" default="None (no upper bound)">
+  Optional upper bound for the event start date. When set, only events that begin on or before this date are included in the export. Hidden after the file has been generated.
+</ParamField>
+
+<ParamField path="export_ics_file" type="Binary (read-only)">
+  The generated `.ics` file, Base64-encoded. Populated by `button_export()` and rendered as a download widget. Not visible until the file has been generated.
+</ParamField>
+
+<ParamField path="export_ics_filename" type="Char (read-only)">
+  The filename automatically assigned to the download, formatted as `YYYY-MM-DD_calendar.ics` using today's date (for example, `2024-05-22_calendar.ics`). Stored as a hidden field and used by the binary widget's `filename` attribute.
+</ParamField>
+
+## Programmatic Usage
+
+You can trigger the export from Python code — useful for automated reporting, scheduled actions, or custom integrations:
+
+```python
+from datetime import date
+
+# Create and populate the wizard
+wizard = env['calendar.export.ics'].create({
+    'partner_id': partner.id,
+    'export_end_date': date(2024, 12, 31),
+})
+
+# Run the export
+wizard.button_export()
+
+# Retrieve the Base64-encoded .ics content
+ics_content = wizard.export_ics_file  # bytes, Base64-encoded
+filename    = wizard.export_ics_filename  # e.g. '2024-05-22_calendar.ics'
+```
+
+To decode the raw iCalendar text:
+
+```python
+import base64
+
+ics_text = base64.b64decode(ics_content).decode('utf-8')
+print(ics_text)
+```
+
+## Security
+
+Access to the wizard is governed by the **`calendar_export_ics.group_calendar_export`** security group, which is referenced in `ir.model.access.csv`. Members of this group have full read/write/create/unlink access to the `calendar.export.ics` transient model.
+
+Within the wizard form, the **Partner** field carries an additional restriction: it is only visible to users who belong to **`base.group_erp_manager`**. This means:
+
+- **ERP managers** can export the calendar for any partner in the system.
+- **Regular users** always export for their own partner (set automatically via `default_get`).
+
+---
+
+**Module metadata**
+
+| Field   | Value |
+|---------|-------|
+| Module  | `calendar_export_ics` |
+| Version | 18.0.1.0.1 |
+| Author  | ForgeFlow S.L. / Odoo Community Association (OCA) |
+| License | AGPL-3 |
+| Repository | [OCA/calendar](https://github.com/OCA/calendar) |

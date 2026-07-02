@@ -1,0 +1,63 @@
+---
+title: "Calendar Event Description in a Dedicated Tab"
+sidebarTitle: "Description Layout"
+description: "Move the calendar event description field into its own full-width tab, giving users adequate space for detailed notes and long-form event information."
+---
+
+The standard Odoo calendar event form places the description field inline within the main form layout, which limits the available space and makes it awkward to write or read longer notes. The **Calendar Event Description Layout** module addresses this by relocating the description field into its own dedicated **Description** tab, displayed at full width so that all available space can be used for content.
+
+## What Changes
+
+The module makes two targeted XPath modifications to the built-in `calendar.event` form view — no new fields or Python logic are introduced.
+
+**First XPath — hide the original field:**
+
+The existing inline `description` field is hidden by setting its `invisible` attribute to `1`, removing it from its original position in the form.
+
+**Second XPath — add a dedicated tab:**
+
+A new `Description` page is inserted into the notebook, directly before the existing `Invitations` tab. The description field is rendered there at full width:
+
+```xml
+<xpath expr="//field[@name='description']" position="attributes">
+    <attribute name="invisible">1</attribute>
+</xpath>
+<xpath expr="//notebook/page[@name='page_invitations']" position="before">
+    <page name="page_description" string="Description">
+        <group>
+            <field
+                name="description"
+                placeholder="Add description"
+                readonly="not user_can_edit"
+                nolabel="1"
+                colspan="2"
+            />
+        </group>
+    </page>
+</xpath>
+```
+
+Key properties of the new layout:
+
+- **`colspan="2"`** — the field spans both columns of the group, using the full form width.
+- **`nolabel="1"`** — the field label is hidden; the tab title already provides the context.
+- **`placeholder="Add description"`** — a prompt is shown when the field is empty.
+- **`readonly="not user_can_edit"`** — the existing permission logic is preserved unchanged; users who cannot edit the event still cannot modify the description.
+
+## No Configuration Required
+
+This module is a pure view override. There are no settings to configure, no new models, and no database schema changes — installing it immediately applies the new layout to all calendar event forms.
+
+<Tip>
+  Because this is a view-only change, it is completely safe to install or uninstall at any time without affecting your calendar data. Uninstalling simply reverts the form to the standard Odoo layout.
+</Tip>
+
+## Module Metadata
+
+| Field       | Value                                          |
+|-------------|------------------------------------------------|
+| Version     | 18.0.1.0.0                                     |
+| Author      | Solvos, Odoo Community Association (OCA)       |
+| License     | AGPL-3                                         |
+| Depends on  | `calendar`                                     |
+| Repository  | [OCA/calendar](https://github.com/OCA/calendar) |

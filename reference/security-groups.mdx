@@ -1,0 +1,151 @@
+---
+title: "Security Groups and Access Control"
+sidebarTitle: "Security Groups"
+description: "Reference for every security group, model ACL, and record rule across OCA Calendar modules: ICS export/import, public holidays, and resource booking."
+---
+
+OCA Calendar is composed of several independent Odoo modules, each with its own security layer. Some modules define dedicated user groups, others rely entirely on Odoo's built-in groups (`base.group_user` for internal users, `base.group_system` for administrators, and `base.group_portal` for portal users). The sections below document every group, model-level access control list (ACL), and record rule defined in source.
+
+---
+
+## ICS Export Security
+
+The `calendar_export_ics` module defines a single hidden security group that gates access to the export wizard.
+
+### Group definition
+
+| XML ID | Name | Category |
+|--------|------|----------|
+| `calendar_export_ics.group_calendar_export` | Calendar Export Ics | Hidden (`base.module_category_hidden`) |
+
+<Note>
+  Because the group belongs to `base.module_category_hidden`, it does **not** appear in **Settings → Users & Companies → Groups** in the Odoo UI. It is managed programmatically (e.g., assigned via automated actions or technical menus) rather than from the standard user-permission screen.
+</Note>
+
+### Model access (ACL)
+
+| Model | Group | Read | Write | Create | Delete |
+|-------|-------|:----:|:-----:|:------:|:------:|
+| `calendar.export.ics` | `group_calendar_export` | ✓ | ✓ | ✓ | ✓ |
+
+Only users who hold `group_calendar_export` can open and submit the ICS export wizard. No other groups are granted access to this transient model.
+
+---
+
+## ICS Import Security
+
+The `calendar_import_ics` module follows the same pattern as the export module: a single hidden group controls wizard access.
+
+### Group definition
+
+| XML ID | Name | Category |
+|--------|------|----------|
+| `calendar_import_ics.group_calendar_import` | Calendar Import Ics | Hidden (`base.module_category_hidden`) |
+
+<Note>
+  Like the export group, `group_calendar_import` is hidden from the standard Groups UI. It is assigned programmatically and is not selectable from the user form.
+</Note>
+
+### Model access (ACL)
+
+| Model | Group | Read | Write | Create | Delete |
+|-------|-------|:----:|:-----:|:------:|:------:|
+| `calendar.import.ics` | `group_calendar_import` | ✓ | ✓ | ✓ | ✓ |
+
+---
+
+## Public Holiday Security
+
+The `calendar_public_holiday` module does **not** define custom groups. It relies on Odoo's built-in `base.group_user` (all internal users) and `base.group_system` (system administrators / Technical menu users) groups.
+
+### Model access (ACL)
+
+| Model | Internal Users (`base.group_user`) | System Admin (`base.group_system`) |
+|-------|:----------------------------------:|:----------------------------------:|
+| `calendar.public.holiday` | Read only | Full CRUD |
+| `calendar.public.holiday.line` | Read only | Full CRUD |
+| `calendar.public.holiday.next.year` *(wizard)* | — | Full CRUD |
+
+**Key points:**
+
+- Every internal Odoo user can **read** the public holiday calendar and its individual lines. This allows HR and scheduling features that depend on holiday data to work without requiring elevated permissions.
+- Only system administrators can **create, modify, or delete** holiday sets and their lines.
+- The "next year" wizard (`calendar.public.holiday.next.year`) is exclusively available to system administrators — no read access is granted to regular users.
+
+<Warning>
+  If a user needs to manage public holidays but does not have full system-administrator rights, an Odoo administrator must grant `base.group_system` membership directly, as there is no intermediate "Holiday Manager" group in this module.
+</Warning>
+
+---
+
+## Resource Booking Security
+
+The `resource_booking` module defines its own category and two explicit groups, plus a comprehensive set of record rules.
+
+### Groups
+
+| XML ID | Name | Implies | Default members |
+|--------|------|---------|-----------------|
+| `resource_booking.group_user` | Resource Booking / User | — | *(assigned manually)* |
+| `resource_booking.group_manager` | Resource Booking / Manager | `group_user` | `base.user_root`, `base.user_admin` |
+
+Both groups belong to the `Resource Booking` module category and are visible in **Settings → Users & Companies → Groups**.
+
+### Model access (ACL)
+
+| Model | User | Manager | Portal (`base.group_portal`) |
+|-------|:----:|:-------:|:----------------------------:|
+| `resource.booking.type` | Read | Full CRUD | — |
+| `resource.booking.combination` | Read | Full CRUD | — |
+| `resource.booking.type.combination.rel` | Read | Full CRUD | — |
+| `resource.booking` | Read + Write + Create *(no delete)* | Full CRUD | Read |
+| `resource.resource` | — | Full CRUD | — |
+
+<Note>
+  Regular **User** members can create and edit their own bookings but cannot delete them. Only **Managers** have delete permission on `resource.booking` records.
+</Note>
+
+### Record rules
+
+Record rules add row-level filtering on top of the ACL table above. All multi-company rules are global (apply to every user regardless of group).
+
+#### Multi-company rules (global)
+
+| Rule name | Model | Filter |
+|-----------|-------|--------|
+| Resource booking type multi company rule | `resource.booking.type` | `company_id in user.company_ids + [False]` |
+| Resource booking multi company rule | `resource.booking` | `type_id.company_id in user.company_ids + [False]` |
+
+A booking type with no company (`company_id = False`) is visible to users of **all** companies.
+
+#### Per-group record rules on `resource.booking`
+
+| Rule name | Applies to | Domain |
+|-----------|-----------|--------|
+| Resource booking portal rule | `base.group_portal` | `partner_ids child_of user.partner_id` **OR** `message_partner_ids child_of user.partner_id` |
+| Resource booking user rule | `resource_booking.group_user` | attendee **OR** follower **OR** `combination_id.resource_ids.user_id = user` |
+| Resource booking manager rule | `resource_booking.group_manager` | `(1 = 1)` — unrestricted |
+
+**What each rule means in practice:**
+
+- **Portal users** can see only bookings where they appear as an attendee (`partner_ids`) or as a message follower (`message_partner_ids`).
+- **Regular users** can see bookings where they are an attendee, a follower, *or* where they own one of the booked resources — giving resource owners visibility into upcoming reservations.
+- **Managers** can see every booking regardless of company (subject only to the global multi-company rule above).
+
+---
+
+## Event Type Color Security
+
+The `calendar_event_type_color` module does not define a new group. It restricts the **Calendar Event Type** menu item to `base.group_system` (administrators):
+
+```xml
+<menuitem
+    id="calendar_management_menu"
+    name="Calendar Event Type"
+    parent="calendar.mail_menu_calendar"
+    action="calendar_event_type_action"
+    groups="base.group_system"
+/>
+```
+
+Only Odoo administrators can access **Calendar → Calendar Event Type** to assign colors to event types. Regular internal users will not see this menu entry.

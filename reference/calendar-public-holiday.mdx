@@ -1,0 +1,182 @@
+---
+title: "Public Holiday Data Models Reference"
+sidebarTitle: "Public Holidays"
+description: "Complete field and method reference for the calendar.public.holiday, calendar.public.holiday.line models and the next-year copy wizard."
+---
+
+The `calendar_public_holiday` module introduces two persistent models and one transient wizard that together manage country- and state-scoped public holiday sets. A **holiday set** (`calendar.public.holiday`) groups individual **holiday lines** (`calendar.public.holiday.line`) under a single calendar year and optional country. Every line automatically creates and keeps in sync a `calendar.event` so that public holidays are visible in the standard Odoo calendar. The **next-year wizard** (`calendar.public.holiday.next.year`) copies an existing set forward to a new year in bulk.
+
+---
+
+## `calendar.public.holiday`
+
+**Technical name:** `calendar.public.holiday`  
+**Description:** Calendar Public Holiday  
+**Default ordering:** `year desc`
+
+This model acts as the container for a set of public holidays. The combination of `year` and `country_id` must be unique across the database.
+
+### Fields
+
+<ParamField path="year" type="Integer" required>
+  Calendar year for this holiday set. Defaults to the current year at creation time (`fields.Date.context_today(self).year`).
+</ParamField>
+
+<ParamField path="country_id" type="Many2one → res.country">
+  Optional country scope. When set, only partners whose `country_id` matches will see these holidays when querying `get_holidays_list()`. Leave empty for a country-agnostic global set.
+</ParamField>
+
+<ParamField path="line_ids" type="One2many → calendar.public.holiday.line">
+  The individual holiday entries that belong to this set. Related field `public_holiday_id` on the line side.
+</ParamField>
+
+<ParamField path="display_name" type="Char (computed)">
+  Human-readable label. Computed from `country_id`:
+  - With country: `"YYYY (Country Name)"` — e.g. `"2025 (Belgium)"`
+  - Without country: `"YYYY"` — e.g. `"2025"`
+</ParamField>
+
+### Constraints
+
+A database-level constraint enforced by `_check_year()` prevents creating two holiday sets with the same `(year, country_id)` pair. Attempting to do so raises a `ValidationError`.
+
+### Methods
+
+#### `get_holidays_list(year, start_dt, end_dt, partner_id)`
+
+```python
+@api.model
+@api.returns("calendar.public.holiday.line")
+def get_holidays_list(self, year=None, start_dt=None, end_dt=None, partner_id=None):
+```
+
+Returns a recordset of `calendar.public.holiday.line` filtered to the requested period and partner context.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `year` | `int` | Calendar year to query. Required when `start_dt`/`end_dt` are omitted. |
+| `start_dt` | `date` | Start of the date range. When provided together with `end_dt`, `year` is inferred from the range. |
+| `end_dt` | `date` | End of the date range (inclusive). |
+| `partner_id` | `int` | Database ID of a `res.partner`. When supplied, results are filtered by the partner's `country_id` and `state_id`. |
+
+The method first finds matching `calendar.public.holiday` records for the year(s) covered by the range, then calls `_get_domain_states_filter()` to further restrict lines to those that are either state-agnostic or match the partner's province/state.
+
+---
+
+#### `is_public_holiday(selected_date, partner_id)`
+
+```python
+@api.model
+def is_public_holiday(self, selected_date, partner_id=None):
+```
+
+Convenience wrapper. Returns `True` if `selected_date` (a `datetime.date` object) falls on a public holiday for the given partner, `False` otherwise.
+
+---
+
+#### `_get_domain_states_filter(pholidays, start_dt, end_dt, partner_id)` *(internal)*
+
+Builds the ORM domain used by `get_holidays_list()` to filter holiday lines by date range and state/region. When the partner has a `state_id`, the domain uses an `OR` clause to include lines that either match that state or have no state restriction. When the partner has no state, only state-agnostic lines (`state_ids = False`) are returned.
+
+<Note>
+  This method is called internally and is not part of the public API. Override it in a custom module to apply additional regional filtering logic.
+</Note>
+
+---
+
+## `calendar.public.holiday.line`
+
+**Technical name:** `calendar.public.holiday.line`  
+**Description:** Calendar Public Holiday Line  
+**Default ordering:** `date, name desc`
+
+Each record represents a single holiday on a specific date within a holiday set. On creation, a corresponding `calendar.event` (all-day, busy, tagged *Public Holidays*) is automatically created and kept in sync for the lifetime of the line.
+
+### Fields
+
+<ParamField path="name" type="Char" required>
+  Human-readable holiday name, e.g. `"Christmas Day"`.
+</ParamField>
+
+<ParamField path="date" type="Date" required>
+  The date on which this holiday falls. Must belong to the same calendar year as the parent `public_holiday_id.year`.
+</ParamField>
+
+<ParamField path="public_holiday_id" type="Many2one → calendar.public.holiday" required>
+  Parent holiday set. Deletion of the parent cascades to all its lines (`ondelete="cascade"`).
+</ParamField>
+
+<ParamField path="variable_date" type="Boolean">
+  Indicates whether the holiday's date changes from year to year (e.g. Easter). Defaults to `True`. Used as a hint when copying sets to a new year.
+</ParamField>
+
+<ParamField path="state_ids" type="Many2many → res.country.state">
+  Optional restriction to specific states or provinces. When empty, the holiday applies nationally. The relation table is `public_holiday_state_rel`.
+</ParamField>
+
+<ParamField path="meeting_id" type="Many2one → calendar.event">
+  Auto-managed linked calendar event. This field is set automatically on `create()` and is not copied when the record is duplicated (`copy=False`).
+</ParamField>
+
+### Constraints
+
+The `_check_date_state_one()` validator enforces two rules:
+
+1. The `date.year` must equal `public_holiday_id.year`.
+2. No two lines in the same holiday set may share the same date unless they target completely disjoint state sets. A line with no states (`state_ids = False`) cannot co-exist with another state-agnostic line on the same date within the same set.
+
+### Calendar Event Lifecycle
+
+<Expandable title="Create, update, and delete behaviour">
+
+**On create** — `create()` calls `_prepare_holidays_meeting_values()` to build event values and then creates a `calendar.event` record. The event is:
+- All-day (`allday = True`)
+- Marked busy (`show_as = "busy"`)
+- Private (`privacy = "confidential"`)
+- Owned by the super-user
+- Tagged with the *Public Holidays* event type (XML ID: `calendar_public_holiday.event_type_holiday`)
+- Named `"Holiday Name"` for global holidays, or `"Holiday Name (Country)"` for country-scoped ones.
+
+**On update** — The `_update_calendar_event()` constraint method (`@api.constrains("date", "name", "public_holiday_id", "state_ids")`) writes the new values to the linked `meeting_id` whenever any of those fields change.
+
+**On delete** — `unlink()` first removes the linked `calendar.event` before deleting the line itself, keeping the calendar clean.
+
+</Expandable>
+
+---
+
+## Wizard: `calendar.public.holiday.next.year`
+
+**Technical name:** `calendar.public.holiday.next.year`  
+**Description:** Create Public Holiday From Existing Ones  
+**Type:** `TransientModel`
+
+This wizard copies holiday lines from one or more existing sets into a new year. It is the recommended way to create the next year's holidays when the dates are predictable (fixed-date holidays).
+
+### Fields
+
+<ParamField path="public_holiday_ids" type="Many2many → calendar.public.holiday">
+  Template holiday sets to copy from. When left empty, the wizard falls back to all existing holiday sets in the database. If multiple sets for the same country are selected, only the **most recent** set per country is used as a template.
+</ParamField>
+
+<ParamField path="year" type="Integer">
+  Target year for the new holiday sets. When left at `0`, each template's year is incremented by one (`last_ph.year + 1`).
+</ParamField>
+
+### Methods
+
+#### `create_public_holidays()`
+
+```python
+def create_public_holidays(self):
+```
+
+Iterates over the resolved templates, creates new `calendar.public.holiday` records for `year`, then copies each line with its date shifted to the target year (`date.replace(year=new_year)`).
+
+**Raises `UserError`** if any template line falls on **February 29** (a leap-day holiday). Handling such cases would require knowing whether the target year is also a leap year, which is left to the user.
+
+On success, returns an `ir.actions.act_window` action that opens the newly created holiday sets in a list/form view.
+
+<Tip>
+  Always select templates from a non-leap year (avoid sets from 2016, 2020, 2024, …) unless you are certain the target year is also a leap year and you have manually adjusted the February 29 line beforehand.
+</Tip>

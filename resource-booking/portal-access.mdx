@@ -1,0 +1,133 @@
+---
+title: "Self-Service Booking Portal for Customers"
+sidebarTitle: "Portal Access"
+description: "Let customers view, schedule, and cancel their bookings via a tokenized portal URL — no Odoo login required. Full guide to routes, tokens, and restrictions."
+---
+
+The Resource Booking portal gives customers a self-service scheduling experience without requiring an Odoo account. Each booking is assigned a unique access token. Sharing the tokenized URL lets the requester open a visual availability calendar, pick a free slot, confirm it, and receive instant feedback — all from their browser. Internal users can generate and share these links directly from the backend booking form.
+
+## Portal Routes
+
+The portal controller registers the following HTTP routes. Routes marked **public (token)** accept the `access_token` query parameter and do not require an active Odoo session.
+
+| Route | Auth | Description |
+|-------|------|-------------|
+| `/my/bookings` | user | Paginated list of all bookings the logged-in portal user can access. |
+| `/my/bookings/<id>` | public (token) | Booking detail page showing the current state and available actions. |
+| `/my/bookings/<id>/schedule` | public (token) | Interactive monthly calendar slot picker for the current month. |
+| `/my/bookings/<id>/schedule/<year>/<month>` | public (token) | Calendar slot picker for a specific year and month (for navigation). |
+| `/my/bookings/<id>/confirm?when=<iso_datetime>` | public (token) | Confirms a specific ISO-formatted datetime slot and moves the booking to `scheduled`. |
+| `/my/bookings/<id>/cancel` | public (token) | Cancels the booking, archives the record, and invalidates the token. |
+
+---
+
+## Tokenized Access
+
+Resource Booking inherits from `portal.mixin`, which provides the `access_token` field and the `get_portal_url()` helper. Every booking record automatically receives a random token on creation.
+
+### Sharing the booking URL
+
+From the backend booking form, click **Share → Send** (or **Action → Open in Portal**) to generate or copy the tokenized URL. The URL has the following shape:
+
+```
+https://your-odoo-instance.com/my/bookings/42?access_token=abc123xyz
+```
+
+- **No Odoo login is required** to open this URL. The `auth="public"` attribute on the route allows unauthenticated access.
+- The token is validated server-side on every request via `_document_check_access()`. An invalid or missing token redirects the visitor to `/my`.
+- Canceling a booking (`action_cancel`) clears the token (`access_token = False`), so the old link can no longer be used.
+
+### Portal context
+
+When a booking is accessed via token, it is loaded with `using_portal=True` and `tz=<booking_type_calendar_tz>` in the Odoo context:
+
+```python
+booking_sudo.with_context(
+    using_portal=True,
+    tz=booking_sudo.type_id.resource_calendar_id.tz
+)
+```
+
+This context flag ensures that `is_modifiable` is evaluated as a non-manager (enforcing the modification deadline) and that all datetimes are rendered in the booking type's timezone.
+
+---
+
+## Scheduling Flow
+
+<Steps>
+  <Step title="Customer receives the booking URL">
+    The requester is sent an email (triggered when a resource combination is assigned) containing a link to their booking detail page at `/my/bookings/<id>?access_token=<token>`.
+  </Step>
+  <Step title="Open the availability calendar">
+    The customer clicks **Schedule** (or the link navigates directly to `/schedule`). The server calls `_get_available_slots()` and renders a monthly calendar grid with free slots highlighted. Only slots that fit within the booking type's work calendar **and** at least one available resource combination are shown.
+  </Step>
+  <Step title="Select a free slot">
+    The customer clicks a highlighted time slot. The portal UI navigates to the `/confirm` route with the selected ISO datetime as the `when` query parameter.
+  </Step>
+  <Step title="Confirm the slot">
+    The `/confirm` handler parses the ISO datetime, converts it from the calendar timezone to UTC, and sets `booking.start`. On success, `action_confirm()` is called to mark the requester's attendance as accepted.
+  </Step>
+  <Step title="Booking is now scheduled">
+    The booking moves to `scheduled` (or immediately to `confirmed` if the requester's attendee record is auto-accepted). The customer is redirected back to the booking detail page at `/my/bookings/<id>`.
+  </Step>
+</Steps>
+
+### Timezone rendering
+
+The scheduling calendar is always rendered in the timezone of the booking type's **Availability Calendar** (`resource_calendar_id.tz`). This ensures that slot times shown to the customer reflect the timezone of the physical location or resource, regardless of where the customer is browsing from.
+
+### Navigation between months
+
+The portal scheduling view includes previous/next month navigation. Each arrow links to:
+
+```
+/my/bookings/<id>/schedule/<year>/<month>?access_token=<token>
+```
+
+The server recomputes available slots for the requested month and re-renders the calendar.
+
+---
+
+## Portal Restrictions
+
+<Note>
+  Portal users and unauthenticated token-based visitors **cannot modify or cancel a booking once the modification deadline has passed**. The deadline is defined in hours on the booking type (default: 24 hours before the booking start). If a customer needs to reschedule past the deadline, a backend manager must do it for them.
+</Note>
+
+Access rules enforced for portal users:
+
+- **Visibility**: a portal user can only see bookings where they appear in `partner_ids` (attendees) or `message_partner_ids` (followers). This is enforced by the `rule_resource_booking_portal` record rule:
+
+  ```xml
+  [
+    '|',
+    ('partner_ids', 'child_of', user.partner_id.ids),
+    ('message_partner_ids', 'child_of', user.partner_id.ids)
+  ]
+  ```
+
+- **Modification deadline**: `is_modifiable` is always computed with `using_portal=True`, which prevents portal users from being treated as managers. Once `is_overdue = True`, the booking is read-only in the portal.
+
+- **Token invalidation**: after cancellation, the access token is cleared, so the original shared URL returns a redirect to `/my` rather than an error page.
+
+---
+
+## Email Notifications
+
+When a resource combination is assigned to a booking (either manually or via auto-assign), the system auto-subscribes the user-partners of the combination's resources as followers and sends them an email notification.
+
+The notification is triggered by `_message_auto_subscribe_followers()`, which appends each resource partner to the follower list with the email template:
+
+```
+resource_booking.message_combination_assigned
+```
+
+This template informs the assigned resource (for example, a doctor or salesperson) that they have a new booking requiring their availability. The notification is **only sent** if the resource partner is not the user who performed the assignment (to avoid self-notifications).
+
+### Summary of notification triggers
+
+| Event | Recipient | Template |
+|-------|-----------|----------|
+| Combination assigned to booking | Resource user-partners | `message_combination_assigned` |
+| Booking scheduled / rescheduled | All attendees (via `calendar.event`) | Standard calendar invitation |
+| Booking canceled | All followers | Standard chatter message |

@@ -1,0 +1,135 @@
+---
+title: "Configuring Booking Types and Combinations"
+sidebarTitle: "Configuration"
+description: "Learn how to configure Resource Booking Types and Resource Combinations in Odoo — the two building blocks that define scheduling rules and available resources."
+---
+
+All Resource Booking configuration revolves around two building blocks: **Booking Types** and **Resource Combinations**. A Booking Type defines the rules — duration, availability calendar, slot interval, and assignment policy. A Resource Combination defines which resources must all be free at the same time. You then link combinations to a booking type to make them available for reservation.
+
+## Creating a Booking Type
+
+<Steps>
+  <Step title="Open the Booking Types list">
+    Go to **Resource Bookings → Types** in the top menu. If the app is freshly installed, the list will be empty.
+  </Step>
+  <Step title="Create a new record">
+    Click **New**. Enter a descriptive **Name** for the booking type (for example, *Doctor Consultation* or *Sales Call*). The name is translatable and appears in the portal.
+  </Step>
+  <Step title="Set the booking duration">
+    In the **Duration** field, enter the length of each booking in hours. For a 30-minute slot, enter `0.5`. This value becomes the default for every booking created under this type, though individual bookings can override it.
+  </Step>
+  <Step title="Set the slot duration">
+    In the **Slot Duration** field, enter the interval between available slot start times. A value of `0.5` means slots start every 30 minutes (09:00, 09:30, 10:00, …). This controls the granularity of the availability calendar shown in the portal.
+  </Step>
+  <Step title="Choose a combination assignment policy">
+    In the **Combination Assignment** field, choose how the system selects a free combination when `Auto Assign` is enabled on a booking:
+    - **Sorted** — picks the combination with the lowest sequence number that is free at the requested time.
+    - **Randomly** — shuffles the available combinations and picks the first free one. Use this when all combinations are equivalent and you want to distribute load evenly.
+  </Step>
+  <Step title="Assign an Availability Calendar">
+    In the **Availability Calendar** field, select (or create) a `resource.calendar`. Bookings will only be allowed during working hours defined by this calendar. By default it inherits the company's standard calendar.
+  </Step>
+  <Step title="Add optional defaults">
+    Optionally configure:
+    - **Default Reminders** — calendar alarms attached to every meeting created for this type.
+    - **Default Tags** — `calendar.event.type` tags applied to every meeting.
+    - **Location** and **Meeting URL** — pre-filled on new bookings and synced to the calendar event.
+    - **Requester Advice** — advisory text shown in the portal and inserted as the calendar event description.
+    - **Modifications Deadline** — hours before the booking start within which guests can no longer reschedule or cancel (default 24 hours).
+  </Step>
+</Steps>
+
+### Key Fields Reference
+
+<ParamField path="name" type="Char" required>
+  The human-readable name of the booking type. Translatable. Appears in portal views and booking display names.
+</ParamField>
+
+<ParamField path="duration" type="Float" default="0.5">
+  Default booking length in **hours**. Each booking inherits this value from its type unless overridden manually. `0.5` = 30 minutes.
+</ParamField>
+
+<ParamField path="slot_duration" type="Float" default="0.5">
+  Interval in **hours** between available slot start times in the scheduling calendar. Controls the granularity of the portal slot picker.
+</ParamField>
+
+<ParamField path="modifications_deadline" type="Float" default="24">
+  Number of **hours** before the booking start time within which non-manager users can no longer modify or cancel the booking. Set to `0` to allow modifications right up to the start time.
+</ParamField>
+
+<ParamField path="resource_calendar_id" type="Many2one (resource.calendar)" required>
+  The work calendar that defines when bookings are allowed. Acts as the outer boundary — resource calendars are then intersected with this to find truly free slots.
+</ParamField>
+
+<ParamField path="combination_assignment" type="Selection" default="random">
+  Controls how the auto-assign engine picks a combination. `sorted` uses the sequence number on the type–combination relation; `random` shuffles the list on each evaluation.
+</ParamField>
+
+<ParamField path="requester_advice" type="Text">
+  Free-text guidance for the person making the booking. Displayed prominently on the portal scheduling page and inserted into new calendar event descriptions.
+</ParamField>
+
+---
+
+## Creating Resource Combinations
+
+A **Resource Combination** groups one or more `resource.resource` records that must all be simultaneously free for a booking to be valid. A combination represents a "team" or "room + equipment" bundle — the system will never offer a slot where even one member resource is busy.
+
+<Steps>
+  <Step title="Open the Combinations list">
+    Go to **Resource Bookings → Combinations**.
+  </Step>
+  <Step title="Create a new record">
+    Click **New**. The **Name** field is computed automatically from the names of the selected resources (joined with ` + `), so you do not need to fill it in manually.
+  </Step>
+  <Step title="Add Resources">
+    In the **Resources** field, add one or more `resource.resource` records. These can be human resources (linked to Odoo users via `hr`) or material resources such as rooms or equipment.
+  </Step>
+  <Step title="Optionally set a Forced Calendar">
+    If you want to override the individual work calendars of the member resources, set the **Forced Calendar** field to a specific `resource.calendar`. This is useful when a room has different availability rules than the people assigned to it.
+  </Step>
+</Steps>
+
+### How the name is computed
+
+The combination name is auto-generated as the sorted, joined list of its member resource names. If a forced calendar is set, it appears in parentheses:
+
+```
+Alice + Bob (using calendar Part-Time Schedule)
+```
+
+---
+
+## Linking Combinations to a Booking Type
+
+Once you have created combinations, attach them to a booking type so they become available for that type's bookings.
+
+<Steps>
+  <Step title="Open the Booking Type form">
+    Go to **Resource Bookings → Types** and open the relevant type.
+  </Step>
+  <Step title="Open the Combinations tab">
+    Click the **Combinations** tab (also labelled *Available resource combinations* in some views).
+  </Step>
+  <Step title="Add combination lines">
+    Click **Add a line** and select the combinations to make available. Each line records a **Sequence** number used when the assignment policy is set to `Sorted`.
+  </Step>
+  <Step title="Set sequence for priority">
+    When using the **Sorted** assignment policy, give the highest-priority combination the lowest sequence number (e.g. `10`). The auto-assign engine will try combinations in ascending sequence order and return the first one that is free.
+  </Step>
+</Steps>
+
+---
+
+## Multi-Company Support
+
+<Note>
+  Each Booking Type has a **Company** field (`company_id`). Record rules in the security layer restrict visibility so that users only see booking types (and their related bookings) that belong to their own company. Setting `company_id` to blank (`False`) makes the booking type visible across all companies.
+</Note>
+
+The multi-company rules apply at two levels:
+
+- **Booking Type**: filtered by `company_id in (user_company_ids, False)`.
+- **Booking**: filtered by `type_id.company_id in (user_company_ids, False)`.
+
+This means a booking type created for Company A is invisible to users logged in under Company B, preventing cross-company data leakage without any additional configuration.

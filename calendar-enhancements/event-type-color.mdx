@@ -1,0 +1,78 @@
+---
+title: "Colorize Calendar Events by Event Type"
+sidebarTitle: "Event Type Color"
+description: "Automatically colorize Odoo calendar events based on their assigned event type category, giving teams a consistent, at-a-glance visual overview."
+---
+
+By default, Odoo assigns calendar event colors on a per-user basis — each attendee sees their own color regardless of what kind of event it is. The **Calendar Event Type Color** module changes this behavior so that colors are driven by the event type (category) instead, giving every user a consistent visual grouping of events across the calendar view.
+
+## How It Works
+
+The module adds a computed `color` field to the `calendar.event` model. This field derives its value from the first category (`categ_ids`) assigned to the event, following the categories' natural sort order.
+
+```python
+class CalendarEvent(models.Model):
+    _inherit = "calendar.event"
+
+    color = fields.Integer(compute="_compute_color")
+
+    @api.depends("categ_ids")
+    def _compute_color(self):
+        for event in self:
+            first_tag = fields.first(event.categ_ids)
+            event.color = first_tag.color if first_tag else 0
+```
+
+On the JavaScript side, the module patches `AttendeeCalendarModel` to override the `colorIndex` property used when rendering events in the calendar view:
+
+```javascript
+patch(AttendeeCalendarModel.prototype, {
+    /**
+     * @override
+     * Set color to the event type color
+     */
+    async updateAttendeeData(data) {
+        const res = await super.updateAttendeeData(...arguments);
+        for (const event of Object.values(data.records)) {
+            const eventData = event.rawRecord;
+            event.colorIndex = eventData.color;
+        }
+        return res;
+    },
+});
+```
+
+This ensures the calendar renderer picks up the server-computed color from the event record rather than the user-based default.
+
+## Setting Up Colors
+
+<Steps>
+  <Step title="Open Calendar Event Types">
+    Navigate to **Calendar → Configuration → Calendar Event Type** in the top menu. This menu item is only visible to administrators.
+  </Step>
+  <Step title="Assign a color to each event type">
+    In the list view, select a color for each event type using the **Color** color picker column. Colors map to Odoo's standard color palette (integers 0–11).
+  </Step>
+  <Step title="Assign event types to calendar events">
+    When creating or editing a calendar event, add one or more event types in the **Tags** field. The event will inherit the color of its first (highest-priority) category.
+  </Step>
+</Steps>
+
+## Notes & Behavior
+
+- **First category wins.** When an event has multiple categories, the color is taken from the first one according to the categories' sort order — not the order in which they were added to the event.
+- **No category, no color.** Events with no category assigned default to `color = 0`, which renders without a distinctive color in the calendar.
+
+<Note>
+  The **Calendar Event Type** menu item is restricted to the `base.group_system` security group. Only Odoo administrators can manage event type colors. Regular users can still assign existing event types to their events.
+</Note>
+
+## Module Metadata
+
+| Field       | Value                                      |
+|-------------|--------------------------------------------|
+| Version     | 18.0.1.0.0                                 |
+| Author      | Camptocamp, Odoo Community Association (OCA) |
+| License     | AGPL-3                                     |
+| Depends on  | `calendar`                                 |
+| Repository  | [OCA/calendar](https://github.com/OCA/calendar) |

@@ -1,0 +1,267 @@
+---
+title: "Resource Booking Data Models Reference"
+sidebarTitle: "Resource Booking"
+description: "Field and method reference for resource.booking, resource.booking.type, resource.booking.combination, and their Odoo model extensions."
+---
+
+The `resource_booking` module is built around three core models. A **booking type** (`resource.booking.type`) defines the rules — duration, scheduling calendar, available resource combinations, and reminders — for a category of reservations. A **booking** (`resource.booking`) represents a single reservation request made by one or more attendees, optionally linked to an auto-managed `calendar.event`. A **combination** (`resource.booking.combination`) groups one or more `resource.resource` records that must all be free simultaneously for the booking to be schedulable. Four Odoo base models are also extended to integrate with the booking engine.
+
+---
+
+## `resource.booking`
+
+**Technical name:** `resource.booking`  
+**Inherits:** `mail.thread`, `mail.activity.mixin`, `portal.mixin`  
+**Description:** Resource Booking  
+**Default ordering:** `start DESC`
+
+### Key Fields
+
+<ParamField path="type_id" type="Many2one → resource.booking.type" required>
+  The booking type that governs this booking's duration, calendar, combinations, and reminders. Deletion of the type cascades to all its bookings (`ondelete="cascade"`).
+</ParamField>
+
+<ParamField path="combination_id" type="Many2one → resource.booking.combination">
+  The resource combination reserved for this booking. Computed and auto-assigned when `combination_auto_assign` is `True` and a `start` date is set. Can be set manually when `combination_auto_assign` is `False`.
+</ParamField>
+
+<ParamField path="combination_auto_assign" type="Boolean">
+  When `True` (default), the system automatically selects the best available combination each time `start` changes. When `False`, the user picks a combination manually and the engine honours that choice.
+</ParamField>
+
+<ParamField path="partner_ids" type="Many2many → res.partner" required>
+  People who will attend this booking. At least one partner is required. The first partner is surfaced as `partner_id` (computed, non-stored).
+</ParamField>
+
+<ParamField path="user_id" type="Many2one → res.users">
+  The organizer of the booking. Defaults to the current user at creation time. Synced from the linked `calendar.event` when a meeting exists.
+</ParamField>
+
+<ParamField path="start" type="Datetime">
+  Booking start date/time. Computed from `meeting_id.start` when a meeting exists; stored so it can be indexed and searched.
+</ParamField>
+
+<ParamField path="stop" type="Datetime">
+  Booking end date/time. Derived from `start + duration`. Stored and indexed.
+</ParamField>
+
+<ParamField path="duration" type="Float">
+  Length of the booking in hours. Defaults to `type_id.duration`. Synced from the linked `calendar.event` once a meeting exists.
+</ParamField>
+
+<ParamField path="meeting_id" type="Many2one → calendar.event">
+  The calendar event linked to this booking. **Lazy-created** by `_sync_meeting()` the first time a `start` date is set; destroyed when the booking is unscheduled or canceled. Unique per booking (`UNIQUE(meeting_id)` SQL constraint).
+</ParamField>
+
+<ParamField path="state" type="Selection">
+  Workflow state of the booking. Stored and tracked.
+
+  | Value | Label | Meaning |
+  |-------|-------|---------|
+  | `pending` | Pending | No meeting scheduled yet. |
+  | `scheduled` | Scheduled | Meeting exists but attendee has not confirmed. |
+  | `confirmed` | Confirmed | Meeting exists and requester accepted the invite. |
+  | `canceled` | Canceled | Booking archived; meeting removed. |
+</ParamField>
+
+<ParamField path="is_modifiable" type="Boolean (computed)">
+  `False` when `is_overdue` is `True` **and** the current user is not in the `resource_booking.group_manager` security group (or is accessing via the portal). Managers can always modify overdue bookings.
+</ParamField>
+
+<ParamField path="is_overdue" type="Boolean (computed)">
+  `True` when the current time has passed `start − type_id.modifications_deadline` hours. Always `False` when no `start` date is set.
+</ParamField>
+
+### Methods
+
+#### `_check_scheduling()`
+
+```python
+@api.constrains("combination_id", "meeting_id", "type_id")
+def _check_scheduling(self):
+```
+
+Validates that every scheduled booking (one with a `meeting_id`) fits inside the work intervals of both its booking type's `resource_calendar_id` and its `combination_id`. Raises `ValidationError` when:
+
+- A booking has a meeting but no combination with resources.
+- A booking's `(start, stop)` window is not fully contained within any single contiguous available interval (as computed by `_get_intervals()`).
+
+Already-elapsed bookings (`stop < now`) are exempt from this check.
+
+---
+
+#### Auto-assignment Algorithm
+
+When `combination_auto_assign` is `True` and `start` changes, `_compute_combination_id()` calls `_get_best_combination()`, which:
+
+1. Puts the currently selected combination first in the candidate list (highest priority).
+2. Appends all other combinations linked to `type_id`, ordered by the type's `combination_assignment` strategy (`sorted` by sequence, or `random`).
+3. Returns the first combination for which `_get_intervals(start_dt, stop_dt, combination)` returns an interval that fully contains the booking window.
+
+<Note>
+  When called from the portal (`using_portal` context key), the method raises a `ValidationError` if no combination is available, giving the end user immediate feedback.
+</Note>
+
+---
+
+#### `_sync_meeting()` *(internal)*
+
+Lazy-creates or destroys the linked `calendar.event` whenever `start`, `stop`, `duration`, or related fields change. Called automatically from `create()` and `write()`. Uses `syncing_booking_ids` context to prevent recursion between the booking and the event.
+
+---
+
+## `resource.booking.type`
+
+**Technical name:** `resource.booking.type`  
+**Inherits:** `mail.thread`, `mail.activity.mixin`  
+**Description:** Resource Booking Type
+
+### Key Fields
+
+<ParamField path="name" type="Char" required>
+  Display name of the booking type. Translatable and indexed.
+</ParamField>
+
+<ParamField path="duration" type="Float" required>
+  Default booking duration in hours. Must be positive. Defaults to `0.5` (30 minutes).
+</ParamField>
+
+<ParamField path="slot_duration" type="Float" required>
+  The step size in hours between consecutive available start slots shown to the requester. Defaults to `0.5` (30 minutes). A value of `1.0` with a `duration` of `0.5` means slots are offered every hour on the hour.
+</ParamField>
+
+<ParamField path="modifications_deadline" type="Float" required>
+  Number of hours before `start` after which unconfirmed bookings can no longer be modified by non-managers. Defaults to `24`. Also used to exclude near-future slots from the availability calendar shown to portal users.
+</ParamField>
+
+<ParamField path="resource_calendar_id" type="Many2one → resource.calendar" required>
+  The work schedule that governs when bookings of this type may be placed. Defaults to the company's default resource calendar. Used as the outer bound for availability calculations.
+</ParamField>
+
+<ParamField path="combination_assignment" type="Selection" required>
+  Strategy for auto-assigning combinations.
+
+  | Value | Label |
+  |-------|-------|
+  | `sorted` | Sorted — always picks the combination with the lowest sequence number first. |
+  | `random` | Randomly — shuffles candidates on every evaluation; default. |
+</ParamField>
+
+<ParamField path="alarm_ids" type="Many2many → calendar.alarm">
+  Default reminders added to every `calendar.event` created for bookings of this type.
+</ParamField>
+
+<ParamField path="categ_ids" type="Many2many → calendar.event.type">
+  Default event tags applied to meetings created for bookings of this type. Copied to `resource.booking.categ_ids` when the type changes.
+</ParamField>
+
+<ParamField path="requester_advice" type="Text">
+  Free-text guidance shown to the requester in portal invitation emails and the scheduling calendar view. Translatable. Also copied as the default `description` of new `calendar.event` records.
+</ParamField>
+
+<ParamField path="company_id" type="Many2one → res.company">
+  Company scope. Defaults to the current company.
+</ParamField>
+
+---
+
+## `resource.booking.combination`
+
+**Technical name:** `resource.booking.combination`  
+**Description:** Bookable resource combinations
+
+A combination is a named grouping of one or more `resource.resource` records that must **all** be simultaneously available for a booking to succeed. A single resource (e.g. a meeting room) is a combination of one. Multiple resources (e.g. a doctor + an examination room) form a combination of two.
+
+### Key Fields
+
+<ParamField path="resource_ids" type="Many2many → resource.resource" required>
+  The resources that must be free together. The combination is only schedulable in time windows where every one of its resources has a free work interval.
+</ParamField>
+
+<ParamField path="forced_calendar_id" type="Many2one → resource.calendar">
+  When set, this calendar is used **instead of** each individual resource's own `calendar_id` for availability calculations. Useful when resources belong to different schedules but must be treated as a single unit.
+</ParamField>
+
+<ParamField path="name" type="Char (computed, stored)">
+  Auto-generated from resource names joined with `" + "`. When a `forced_calendar_id` is set, the calendar name is appended in parentheses: `"Resource A + Resource B (using calendar Weekly 40h)"`.
+</ParamField>
+
+### Methods
+
+#### `_get_intervals(start_dt, end_dt, tz)`
+
+```python
+def _get_intervals(self, start_dt, end_dt, tz):
+```
+
+Computes the intersection of all resource work intervals within `[start_dt, end_dt]`. Steps:
+
+1. Starts with the full `[start_dt, end_dt]` interval as a base.
+2. For each `resource.resource` in `resource_ids`, fetches its work intervals via `calendar._work_intervals_batch()` (using `forced_calendar_id` if set, otherwise the resource's own `calendar_id`).
+3. Converts intervals to the requested `tz` timezone if it differs from the calendar's timezone.
+4. Intersects (`&=`) each resource's intervals with the running result.
+5. Unions (`|=`) the final result for multi-combination recordsets.
+
+The method runs with `exclude_public_holidays=True` context to honour the `hr_holidays_public` integration when that module is installed.
+
+<Tip>
+  Pass `analyzing_booking=<booking_id>` in the context (done automatically by `resource.booking._get_intervals()`) to exclude the booking's own existing meeting from the busy-time calculation, preventing false conflicts during reschedules.
+</Tip>
+
+---
+
+## Extended Models
+
+The module extends four Odoo base models to integrate with the booking engine.
+
+### `calendar.event`
+
+<Expandable title="Extensions to calendar.event">
+
+**New field:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `resource_booking_ids` | One2many → resource.booking | Reverse relation to the booking(s) using this event. Enforced as effectively one-to-one by the `UNIQUE(meeting_id)` SQL constraint on `resource.booking`. |
+
+**Constraint `_check_bookings_scheduling()`** — Calls `resource.booking._check_scheduling()` whenever the event's `start` or `stop` changes, keeping schedules valid from both sides.
+
+**Modification guard** — `write()` and `unlink()` call `_validate_booking_modifications()`, which raises `ValidationError` if any linked booking has `is_modifiable = False` (i.e., the modification deadline has passed and the caller is not a manager).
+
+**Auto-confirm resource attendees** — `_attendees_values()` is overridden so that resource-user attendees are automatically set to `state = "accepted"` when a hand-picked (non-auto-assigned) combination is used, avoiding a spurious "pending" notification to the resource owner.
+
+</Expandable>
+
+### `resource.calendar`
+
+<Expandable title="Extensions to resource.calendar">
+
+**Override `_leave_intervals_batch()`** — When the `analyzing_booking` key is present in the context, the method injects busy `calendar.event` intervals as additional leaves. This makes ordinary calendar events (meetings, all-day holidays, etc.) count as unavailable time during booking availability calculations.
+
+The busy-interval logic (`_calendar_event_busy_intervals()`) considers an event as blocking a resource when:
+- The event's `resource_booking_ids` include the booking being analysed, **or**
+- The resource is a `user`-type resource and the user is an invited attendee with a non-declined status, **or**
+- The event's `show_as` is `"busy"` and the event belongs to the resource's user.
+
+</Expandable>
+
+### `resource.resource`
+
+<Expandable title="Extensions to resource.resource">
+
+**New method `is_available(start_dt, end_dt, domain, tz)`** — Convenience helper that returns `True` if the resource has a contiguous work interval covering the entire `[start_dt, end_dt]` window. Internally calls `calendar._work_intervals_batch()` with `analyzing_booking=-1` context to count existing bookings as busy time.
+
+</Expandable>
+
+### `res.partner`
+
+<Expandable title="Extensions to res.partner">
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `resource_booking_ids` | Many2many → resource.booking | All bookings where this partner appears as an attendee. |
+| `resource_booking_count` | Integer (computed) | Count of the above, used by the smart button in the partner form. |
+
+The smart button's action (`action_view_resource_booking()`) opens the booking list pre-filtered by the partner.
+
+</Expandable>

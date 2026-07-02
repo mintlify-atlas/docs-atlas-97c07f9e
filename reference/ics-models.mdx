@@ -1,0 +1,236 @@
+---
+title: "ICS Import and Export Wizard Models Reference"
+sidebarTitle: "ICS Models"
+description: "Field and method reference for the calendar.export.ics and calendar.import.ics TransientModels and the calendar.event ICS extension."
+---
+
+The `calendar_export_ics` and `calendar_import_ics` modules add two transient wizard models for moving calendar data in and out of Odoo using the standard iCalendar (`.ics`) format. The **export wizard** (`calendar.export.ics`) builds a single `.ics` file containing all future events for a chosen partner, optionally capped by an end date. The **import wizard** (`calendar.import.ics`) parses an uploaded `.ics` file and creates or updates `calendar.event` records idempotently using each event's `UID` property. A lightweight extension to `calendar.event` adds the `event_identifier` field that makes idempotent imports possible.
+
+---
+
+## `calendar.export.ics`
+
+**Technical name:** `calendar.export.ics`  
+**Type:** `TransientModel`  
+**Description:** Calendar Export Ics
+
+### Fields
+
+<ParamField path="partner_id" type="Many2one → res.partner">
+  The partner whose calendar is exported. Pre-filled with the current user's partner by `default_get()`. Only events where this partner appears in `partner_ids` are included.
+</ParamField>
+
+<ParamField path="export_end_date" type="Date">
+  Optional upper bound for event start dates. When set, only events with `start ≤ export_end_date` are exported. Combined with a lower bound of today, this produces a date-ranged export.
+</ParamField>
+
+<ParamField path="export_ics_file" type="Binary (readonly)">
+  The generated `.ics` content, base64-encoded. Populated by `button_export()` → `generate_ics_content()`. Empty until the export button is clicked.
+</ParamField>
+
+<ParamField path="export_ics_filename" type="Char (readonly)">
+  The suggested filename for the download, formatted as `YYYY-MM-DD_calendar.ics` using today's date.
+</ParamField>
+
+### Methods
+
+#### `default_get(fields)`
+
+```python
+@api.model
+def default_get(self, fields):
+```
+
+Extends the standard `default_get()` to pre-fill `partner_id` with `self.env.user.partner_id` when the current user has a linked partner record.
+
+---
+
+#### `button_export()`
+
+```python
+def button_export(self):
+```
+
+Action handler for the **Export** button in the wizard form. Performs these steps in order:
+
+1. Sets `export_ics_filename` to `"YYYY-MM-DD_calendar.ics"`.
+2. Calls `generate_ics_content()` and stores the result in `export_ics_file`.
+3. Returns an `ir.actions.act_window` action that re-opens the same wizard record (`res_id=self.id`, `target="new"`), allowing the user to download the populated file widget.
+
+---
+
+#### `generate_ics_content()`
+
+```python
+def generate_ics_content(self):
+```
+
+Builds and serialises the iCalendar content:
+
+1. Constructs a search domain:
+   - `("start", ">=", date.today())` — always excludes past events.
+   - `("start", "<=", export_end_date)` — applied only when `export_end_date` is set.
+   - `("partner_ids", "in", [partner_id.id])` — scopes to the chosen partner.
+2. Searches `calendar.event` with the domain.
+3. Calls the built-in `_get_ics_file()` method on the result (returns a dict of `{event_id: bytes}`).
+4. Parses each individual ICS blob with `vobject.readOne()` and merges all `VEVENT` components into a single `vobject.iCalendar()` container.
+5. Serialises the combined calendar to UTF-8 and returns it as a base64-encoded `bytes` value.
+
+<Note>
+  `_get_ics_file()` is a standard Odoo method on `calendar.event`. Each call returns one `VCALENDAR` wrapper per event. `generate_ics_content()` strips those wrappers and merges all events into one calendar file for a clean single-file download.
+</Note>
+
+---
+
+## `calendar.import.ics`
+
+**Technical name:** `calendar.import.ics`  
+**Type:** `TransientModel`  
+**Description:** Calendar Import Ics
+
+### Fields
+
+<ParamField path="import_ics_file" type="Binary" required>
+  The `.ics` file to upload. The wizard reads this field as a base64-encoded binary and decodes it to a UTF-8 string before parsing.
+</ParamField>
+
+<ParamField path="import_ics_filename" type="Char">
+  The original filename. Used only to validate that the uploaded file has an `.ics` extension; `button_import()` raises `ValidationError` if the extension is anything else.
+</ParamField>
+
+<ParamField path="import_start_date" type="Date">
+  Optional filter. When set together with `import_end_date`, only events whose `DTSTART` falls on or after this date **and** whose `DTEND` falls on or before `import_end_date` are imported.
+</ParamField>
+
+<ParamField path="import_end_date" type="Date">
+  Optional filter. See `import_start_date`. Both fields must be set for date filtering to apply; if either is absent, all events in the file are processed.
+</ParamField>
+
+<ParamField path="partner_id" type="Many2one → res.partner">
+  Partner to associate with imported events. Falls back to `self.env.user.partner_id` inside `button_import()` if the field is empty and a user session exists.
+</ParamField>
+
+<ParamField path="do_remove_old_event" type="Boolean">
+  When `True` (default), calls `_delete_non_imported_events()` at the end of the import run to remove previously imported events that did not appear in the current file.
+</ParamField>
+
+### Methods
+
+#### `button_import()`
+
+```python
+def button_import(self):
+```
+
+Main entry point. Orchestrates the full import:
+
+1. Validates the file extension (must be `.ics`).
+2. Falls back to the current user's partner if `partner_id` is empty.
+3. Decodes the binary file to a UTF-8 string and splits it into lines.
+4. Pre-processes each `DTSTART` / `DTEND` line that contains a `TZID=` parameter by calling `convert_date_to_z()` to normalise them to UTC `Z`-format.
+5. Iterates line by line, building a `dict` (`ics_event`) per `VEVENT` block. On `END:VEVENT`, calls `_process_event()`.
+6. After processing all events, calls `_delete_non_imported_events()` if `do_remove_old_event` is `True`.
+
+---
+
+#### `_process_event(ics_event, imported_events)`
+
+```python
+def _process_event(self, ics_event, imported_events):
+```
+
+Decides whether to create or update a `calendar.event` for the parsed `VEVENT` dict:
+
+1. Parses `DTSTART` and `DTEND` from the `"%Y%m%dT%H%M%SZ"` format.
+2. Applies the date range filter (`import_start_date` / `import_end_date`) if both are set.
+3. Appends `ics_event["UID"]` to `imported_events` (used later by `_delete_non_imported_events()`).
+4. Searches `calendar.event` by `event_identifier = UID`. If found, calls `_update_event()`; otherwise calls `_create_event()`.
+
+---
+
+#### `_create_event(ics_event, event_start_date, event_end_date)`
+
+```python
+def _create_event(self, ics_event, event_start_date, event_end_date):
+```
+
+Creates a new `calendar.event` with:
+
+| Field | Value |
+|-------|-------|
+| `name` | `ics_event["SUMMARY"]` |
+| `start` | parsed `event_start_date` |
+| `stop` | parsed `event_end_date` |
+| `event_identifier` | `ics_event["UID"]` |
+| `partner_ids` | `[(4, partner_id.id)]` |
+
+---
+
+#### `_update_event(record, ics_event, event_start_date, event_end_date)`
+
+```python
+def _update_event(self, event, ics_event, event_start_date, event_end_date):
+```
+
+Updates only the fields that have changed since the last import:
+
+- `start` — if different from the stored value.
+- `stop` — if different from the stored value.
+- `name` — if `SUMMARY` has changed.
+- `partner_ids` — appends `partner_id` with `(4, partner_id.id, 0)` if not already present.
+
+---
+
+#### `_delete_non_imported_events(imported_events)`
+
+```python
+def _delete_non_imported_events(self, imported_events):
+```
+
+Cleans up stale previously imported events for the current partner:
+
+1. Searches `calendar.event` where:
+   - `event_identifier` is set and **not** in `imported_events`.
+   - The partner appears in `partner_ids`.
+   - `start ≥ import_start_date` and `stop ≤ import_end_date` (when those filters are active).
+2. Removes `partner_id` from each stale event's `partner_ids` via `(3, partner_id.id)`.
+3. Unlinks events that now have no remaining partners.
+
+<Note>
+  This method only removes the partner's association with the event, not the event itself, unless the event becomes orphaned (no partners left). This prevents accidentally deleting events shared with other attendees.
+</Note>
+
+---
+
+#### `convert_date_to_z(line)`
+
+```python
+def convert_date_to_z(self, line):
+```
+
+Normalises a `DTSTART` or `DTEND` line that carries a `TZID=` parameter (e.g. `DTSTART;TZID=Europe/Paris:20250301T090000`) into the UTC `Z`-suffix format that the parser expects (e.g. `DTSTART:20250301T080000Z`).
+
+Steps:
+
+1. Splits the line on `;TZID=` to extract the phase (`DTSTART` or `DTEND`) and timezone ID.
+2. Parses the date/time string with `dateutil.parser.parse()`.
+3. Localises it to the named timezone with `pytz.timezone(tz_id).localize()`.
+4. Converts to UTC via `.astimezone(pytz.UTC)`.
+5. Returns the reformatted line.
+
+---
+
+## Extension: `calendar.event`
+
+**Technical name:** `calendar.event` (inherited)  
+**Module:** `calendar_import_ics`
+
+A single field is added to the standard `calendar.event` model to support idempotent ICS imports.
+
+<ParamField path="event_identifier" type="Char">
+  Stores the `UID` property from an imported ICS file. Used by `_process_event()` to look up an existing event before deciding whether to create or update. Empty for events not created through the import wizard.
+</ParamField>
+
+<Tip>
+  The `event_identifier` field is the key to idempotent imports. As long as the `UID` in the `.ics` file does not change between imports, re-importing the same file will update existing events rather than create duplicates.
+</Tip>

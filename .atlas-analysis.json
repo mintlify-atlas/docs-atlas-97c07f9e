@@ -1,0 +1,91 @@
+{
+  "projectType": "saas",
+  "projectName": "OCA Calendar",
+  "projectDescription": "A collection of Odoo Community Association add-ons that extend Odoo's Calendar module with event type colorization, ICS import/export, public holiday management, and a full resource booking/appointment scheduling system.",
+  "theme": "almond",
+  "primaryColor": "#c37785",
+  "lightColor": "#171c45",
+  "darkColor": "#737bb0",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation"
+            ]
+          },
+          {
+            "group": "Calendar Enhancements",
+            "pages": [
+              "calendar-enhancements/event-type-color",
+              "calendar-enhancements/description-layout",
+              "calendar-enhancements/public-holidays"
+            ]
+          },
+          {
+            "group": "ICS Import & Export",
+            "pages": [
+              "ics/export",
+              "ics/import"
+            ]
+          },
+          {
+            "group": "Resource Booking",
+            "pages": [
+              "resource-booking/overview",
+              "resource-booking/configuration",
+              "resource-booking/managing-bookings",
+              "resource-booking/portal-access"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "Data Models",
+            "pages": [
+              "reference/calendar-public-holiday",
+              "reference/resource-booking-models",
+              "reference/ics-models"
+            ]
+          },
+          {
+            "group": "Configuration & Security",
+            "pages": [
+              "reference/security-groups",
+              "reference/settings"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Colorize calendar events based on event type/category color",
+    "Improved description layout for calendar events (dedicated tab)",
+    "Export Odoo calendar events to a standard ICS file",
+    "Import ICS files to create or update Odoo calendar events with UID-based idempotency",
+    "Manage country- and region-aware public holidays with automatic calendar event creation",
+    "Full resource booking and appointment scheduling system with portal access",
+    "Automated resource combination availability checking with conflict detection",
+    "Configurable modification deadlines, slot durations, and multi-company support"
+  ],
+  "publicApiSurface": [
+    "calendar.public.holiday.get_holidays_list(year, start_dt, end_dt, partner_id)",
+    "calendar.public.holiday.is_public_holiday(selected_date, partner_id)",
+    "resource.booking (model) — create/confirm/cancel bookings",
+    "resource.booking.type (model) — configure booking categories and rules",
+    "resource.booking.combination (model) — define bookable resource groups",
+    "resource.booking.combination._get_intervals(start_dt, end_dt, tz)",
+    "resource.resource.is_available(start_dt, end_dt)",
+    "calendar.export.ics wizard (generate_ics_content)",
+    "calendar.import.ics wizard (button_import)",
+    "Portal routes: /my/bookings, /my/bookings/<id>, /my/bookings/<id>/schedule, /my/bookings/<id>/confirm, /my/bookings/<id>/cancel"
+  ]
+}

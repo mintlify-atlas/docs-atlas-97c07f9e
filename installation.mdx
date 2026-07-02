@@ -1,0 +1,102 @@
+---
+title: "Installing OCA Calendar Modules in Odoo 18"
+sidebarTitle: "Installation"
+description: "Step-by-step guide to installing OCA Calendar add-ons in Odoo 18.0, covering source retrieval, addons path setup, and module activation."
+---
+
+Installing OCA Calendar add-ons follows the standard Odoo community module installation process. You retrieve the source from GitHub or PyPI, make the modules visible to Odoo by placing them on the addons path, then activate them through the Apps menu. All six modules in the collection follow the same procedure — only the Python dependencies differ per module, as detailed in the sections below.
+
+## Installation Steps
+
+<Steps>
+  <Step title="Get the source code">
+    Choose the method that best fits your deployment.
+
+    **Option A — Clone from GitHub (recommended for development and self-hosted installs):**
+
+    ```bash
+    git clone https://github.com/OCA/calendar -b 18.0
+    ```
+
+    This clones the full repository at the `18.0` branch into a local `calendar/` directory containing all six modules.
+
+    **Option B — Install individual modules via pip (recommended for containerised/production installs):**
+
+    ```bash
+    # Install a specific module
+    pip install "odoo-addon-calendar_event_type_color==18.0.*"
+    pip install "odoo-addon-calendar_event_description_layout==18.0.*"
+    pip install "odoo-addon-calendar_export_ics==18.0.*"
+    pip install "odoo-addon-calendar_import_ics==18.0.*"
+    pip install "odoo-addon-calendar_public_holiday==18.0.*"
+    pip install "odoo-addon-resource_booking==18.0.*"
+
+    # Or install the full OCA Calendar meta-package (all six modules at once)
+    pip install "odoo-addons-oca-calendar==18.0.*"
+    ```
+  </Step>
+  <Step title="Add the modules to Odoo's addons path">
+    If you cloned from GitHub, tell Odoo where to find the modules by adding the cloned directory to your `addons_path` setting.
+
+    In your `odoo.conf`:
+
+    ```ini
+    [options]
+    addons_path = /path/to/odoo/addons,/path/to/calendar
+    ```
+
+    If you installed via pip, the modules are placed automatically into your Python environment's site-packages and Odoo will discover them without any `addons_path` changes.
+  </Step>
+  <Step title="Update the module list">
+    Before Odoo can install a newly added module, you must refresh its internal module registry:
+
+    1. Log in to Odoo as an administrator.
+    2. Go to **Settings** and activate **Developer Mode** (Settings → General Settings → scroll to Developer Tools → **Activate the developer mode**).
+    3. Navigate to **Apps** in the top menu.
+    4. Click **Update Apps List** and confirm the dialog.
+  </Step>
+  <Step title="Install the module via the Apps menu">
+    1. In the **Apps** menu, remove the default "Apps" filter from the search bar so that modules are visible.
+    2. Search for the module by name — for example, `Calendar Event Type Color` or `Resource Booking`.
+    3. Click the **Install** button on the module card.
+    4. Odoo will install the module and any missing Odoo core dependencies automatically.
+  </Step>
+</Steps>
+
+## Python Dependencies
+
+Some modules require third-party Python packages that must be present in your Odoo environment before installation:
+
+| Module | Python package | Purpose |
+|---|---|---|
+| `calendar_export_ics` | `vobject` | Generates standards-compliant iCalendar (`.ics`) output |
+| `calendar_import_ics` | `vobject` | Parses uploaded `.ics` files |
+| `calendar_public_holiday` | `openupgradelib` | Handles data migration during module upgrades |
+| `resource_booking` | `cssselect` | Used internally by the booking engine (implicit dependency) |
+
+Install any missing packages into the same Python environment that runs Odoo:
+
+```bash
+pip install vobject openupgradelib cssselect
+```
+
+## Module Dependencies (Odoo Core)
+
+Each add-on declares its Odoo module dependencies in `__manifest__.py`. The table below summarises the required Odoo (and OCA) modules:
+
+| Module | Odoo / OCA dependencies |
+|---|---|
+| `calendar_event_type_color` | `calendar` |
+| `calendar_event_description_layout` | `calendar` |
+| `calendar_export_ics` | `calendar` |
+| `calendar_import_ics` | `calendar` |
+| `calendar_public_holiday` | `calendar` |
+| `resource_booking` | `calendar`, `mail`, `portal`, `resource`, `web_calendar_slot_duration` |
+
+<Warning>
+  **Resource Booking** depends on the `web_calendar_slot_duration` module from the [OCA Web repository](https://github.com/OCA/web). This module is **not** part of Odoo core and must be installed separately before or alongside `resource_booking`. Follow the same installation process described above for the OCA Web repository, targeting the `18.0` branch.
+</Warning>
+
+<Tip>
+  Not sure which modules you need? See the [Introduction](/introduction) for a description of what each add-on does and the use cases it covers.
+</Tip>

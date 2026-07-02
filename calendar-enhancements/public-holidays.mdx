@@ -1,0 +1,97 @@
+---
+title: "Manage Public Holidays in the Odoo Calendar"
+sidebarTitle: "Public Holidays"
+description: "Define country and region-aware public holiday sets that automatically create all-day calendar events, with helpers to copy holidays to the next year."
+---
+
+The **Calendar Holidays Public** module lets you centrally manage public holidays for any country or region directly inside Odoo. Each holiday you define automatically generates a corresponding all-day calendar event, making public holidays visible to everyone on the calendar without any manual data entry. Holidays can be scoped to specific states or provinces, and partner records are used to filter which holidays apply to a given person.
+
+## Key Concepts
+
+**Holiday Set (`calendar.public.holiday`)**
+A holiday set groups all public holidays for a specific calendar year and country. You cannot create two sets for the same year and country combination. Sets are displayed in descending year order.
+
+**Holiday Line (`calendar.public.holiday.line`)**
+Each line within a holiday set represents a single named public holiday with a specific date. Lines can optionally be restricted to one or more states/provinces via `state_ids`. The date on each line must fall within the year defined on the parent holiday set.
+
+**Calendar Event auto-creation**
+Saving a holiday line automatically creates an all-day `calendar.event` marked as **busy** and **confidential**. The event name includes the country name when a country is set (e.g., `Christmas Day (Switzerland)`). If the `calendar_public_holiday.event_type_holiday` event type exists, it is automatically assigned to the event. Deleting a line also deletes its associated calendar event.
+
+## Setting Up Public Holidays
+
+<Steps>
+  <Step title="Open the Public Holidays list">
+    Navigate to **Calendar → Public Holidays → Public Holidays**.
+  </Step>
+  <Step title="Create a new holiday set">
+    Click **New**, then set the **Calendar Year** and **Country** for this set. Each year/country combination must be unique.
+  </Step>
+  <Step title="Add holiday lines">
+    In the **Holiday Dates** tab, add a line for each public holiday. Provide a **Name** and **Date**. Optionally, set **Related States** to restrict the holiday to specific provinces or regions within the country.
+  </Step>
+  <Step title="Save — calendar events are created automatically">
+    Click **Save**. Odoo immediately creates an all-day calendar event for each holiday line. No further action is required.
+  </Step>
+</Steps>
+
+## Copying to Next Year
+
+Rather than re-entering holidays manually every year, you can use the built-in wizard to duplicate an existing set into the next year.
+
+1. Go to **Calendar → Public Holidays → Create Next Year Public Holidays**.
+2. In the **Templates** field, select one or more existing holiday sets to use as a source. If you leave this blank, the wizard automatically uses the most recent set for each country.
+3. Set the **Year** field to the target year. If left blank, the year defaults to the template year plus one.
+4. Click **Create**. The wizard copies all holiday lines to a new set, adjusting each date to the target year.
+
+<Warning>
+  If any holiday line in the selected template falls on **February 29**, the wizard will raise a `UserError` and stop. Leap-year dates cannot be safely copied to non-leap years. To work around this, select a template from a non-leap year (avoid 2016, 2020, 2024, etc.) or manually adjust the conflicting line before running the wizard.
+</Warning>
+
+## Checking Holidays Programmatically
+
+The `calendar.public.holiday` model exposes two public API methods for use in custom code or automation rules.
+
+**`get_holidays_list(year, start_dt, end_dt, partner_id)`** — returns a recordset of `calendar.public.holiday.line` records that fall within the given date range and apply to the specified partner (filtered by the partner's country and state).
+
+**`is_public_holiday(selected_date, partner_id)`** — returns `True` if the given date is a public holiday for the partner, `False` otherwise.
+
+```python
+from datetime import date
+
+holiday_model = env['calendar.public.holiday']
+
+# Check if a specific date is a public holiday for a partner
+is_holiday = holiday_model.is_public_holiday(
+    date(2024, 12, 25), partner_id=partner
+)
+
+# Get all holidays in a date range for a partner
+holidays = holiday_model.get_holidays_list(
+    year=2024,
+    start_dt=date(2024, 1, 1),
+    end_dt=date(2024, 12, 31),
+    partner_id=partner
+)
+```
+
+Both methods accept an optional `partner_id` (the integer ID of a `res.partner` record). When provided, the results are filtered to holidays that match the partner's country and, if the holiday has state restrictions, the partner's state.
+
+## State/Province Restrictions
+
+Holiday lines support a `state_ids` many-to-many field (`res.country.state`). When one or more states are set on a line, that holiday only applies to partners whose `state_id` matches one of the listed states. Lines with no states set are treated as country-wide and apply to all partners in the country regardless of their state.
+
+This allows you to model regional holidays (e.g., a public holiday observed only in certain cantons or provinces) within a single country-level holiday set.
+
+<Note>
+  This module includes a `pre_init_hook` that automatically migrates data from the legacy `hr_holidays_public` module if it was previously installed. Existing public holiday records are preserved and renamed to the new model structure during the migration.
+</Note>
+
+## Module Metadata
+
+| Field      | Value                                                                                           |
+|------------|-------------------------------------------------------------------------------------------------|
+| Version    | 18.0.1.0.1                                                                                      |
+| Authors    | Michael Telahun Makonnen, Tecnativa, Camptocamp, Odoo Community Association (OCA)               |
+| License    | AGPL-3                                                                                          |
+| Depends on | `calendar`                                                                                      |
+| Repository | [OCA/calendar](https://github.com/OCA/calendar)                                                 |

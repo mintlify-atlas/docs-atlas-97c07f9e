@@ -1,0 +1,117 @@
+---
+title: "Import External ICS Calendar Files into Odoo Calendar"
+sidebarTitle: "Import ICS"
+description: "Import .ics files into Odoo Calendar with UID-based idempotent create/update logic, optional date range filtering, and automatic cleanup of stale events."
+---
+
+The **Calendar - Import ICS** module (`calendar_import_ics`) adds a wizard that reads a standard `.ics` file and synchronises its events with Odoo's Calendar. Each event is matched by its `UID` field, so re-running the import updates existing events rather than duplicating them. Events that were previously imported but are no longer present in the file can be cleaned up automatically.
+
+<Warning>
+  Only files with a `.ics` extension are accepted. Uploading any other format (`.csv`, `.xml`, `.json`, etc.) will raise a `ValidationError` and abort the import immediately.
+</Warning>
+
+## Using the Import Wizard
+
+<Steps>
+  <Step title="Open the wizard">
+    In the **Calendar** app, go to **Configuration → Import ICS File**. The import dialog opens as a pop-up form.
+  </Step>
+  <Step title="Upload your .ics file">
+    Click the upload control next to **ICS File** and select your `.ics` file. The file must have a `.ics` extension — the wizard validates this before processing any data.
+  </Step>
+  <Step title="Set optional date filters">
+    Enter values in **Start Import Date** and/or **End Import Date** to restrict which events are processed. Only events whose `DTSTART` falls on or after the start date **and** whose `DTEND` falls on or before the end date will be imported. Leave both fields empty to import every event in the file.
+  </Step>
+  <Step title="Choose whether to remove stale events">
+    The **Remove old events?** toggle is enabled by default. When checked, any event that was previously imported (identified by a non-empty `event_identifier`) but is absent from the current file will be cleaned up after the import finishes.
+  </Step>
+  <Step title="Select a partner">
+    The **Partner** field defaults to the currently logged-in user's partner. Change it to link imported events to a different contact if needed.
+  </Step>
+  <Step title="Run the import">
+    Click **Import**. The wizard parses the file line by line, converts timezone-aware datetimes to UTC, and creates or updates `calendar.event` records accordingly.
+  </Step>
+</Steps>
+
+## Wizard Fields
+
+<ParamField path="import_ics_file" type="Binary (required)">
+  The `.ics` file to upload. This field is required — the wizard cannot proceed without a file. The accompanying hidden `import_ics_filename` field is used to validate the file extension before any records are touched.
+</ParamField>
+
+<ParamField path="import_start_date" type="Date" default="None">
+  Optional lower bound filter. When set, only events whose `DTSTART` date is on or after this value are imported. If either `import_start_date` or `import_end_date` is absent, the date filter is skipped entirely and all events in the file are considered.
+</ParamField>
+
+<ParamField path="import_end_date" type="Date" default="None">
+  Optional upper bound filter. When set, only events whose `DTEND` date is on or before this value are imported. Works in conjunction with `import_start_date` — both fields must be provided for the filter to take effect.
+</ParamField>
+
+<ParamField path="partner_id" type="Many2one (res.partner)" default="Current user's partner">
+  The partner to associate with imported events. Defaults to the logged-in user's partner via a `default_get` fallback inside `button_import`. The partner is added to each event's `partner_ids` many2many field.
+</ParamField>
+
+<ParamField path="do_remove_old_event" type="Boolean" default="True">
+  When enabled, events that carry a non-empty `event_identifier` (i.e. were previously imported) but whose UID is not present in the current file are cleaned up after the import. The cleanup first removes the selected partner from the event's `partner_ids`; if the event then has no remaining attendees, the record is fully deleted.
+</ParamField>
+
+## ICS Field Mapping
+
+The wizard parses raw iCalendar lines and maps the following properties to `calendar.event` fields:
+
+| ICS Field | Odoo Field              | Notes                                      |
+|-----------|-------------------------|--------------------------------------------|
+| `SUMMARY` | `calendar.event.name`   | Event title                                |
+| `DTSTART` | `calendar.event.start`  | Converted to UTC if `TZID=` is present     |
+| `DTEND`   | `calendar.event.stop`   | Converted to UTC if `TZID=` is present     |
+| `UID`     | `calendar.event.event_identifier` | Used for idempotent matching     |
+
+## UID-Based Idempotency
+
+This module extends `calendar.event` with a new `Char` field called `event_identifier`, which stores the `UID` value from the imported iCalendar event. This field is the key to idempotent imports:
+
+- **Existing UID** — if a `calendar.event` record with a matching `event_identifier` already exists, the wizard calls `_update_event()` and writes only the fields that have changed (`start`, `stop`, `name`, `partner_ids`). No duplicate record is created.
+- **New UID** — if no existing record matches, the wizard calls `_create_event()` and inserts a new `calendar.event` with the UID stored in `event_identifier`.
+- **Missing UID** (cleanup) — after all events are processed, if `do_remove_old_event` is `True`, `_delete_non_imported_events()` finds any `calendar.event` whose `event_identifier` is set but was not present in the current import batch (scoped by the selected partner and the optional date range), then removes the partner from those events or deletes the records entirely.
+
+<Tip>
+  Because matching is purely UID-based, you can schedule this import to run automatically or re-run it manually as often as needed to keep Odoo in sync with an external calendar feed. Only genuinely changed fields are written on each run, minimising noise in the chatter and audit log.
+</Tip>
+
+## Timezone Handling
+
+The iCalendar standard allows `DTSTART` and `DTEND` lines to carry a `TZID=` parameter that specifies a named timezone:
+
+```
+DTSTART;TZID=America/New_York:20060101T120000
+DTEND;TZID=America/New_York:20060101T130000
+```
+
+Before the wizard parses these values, it detects the `TZID=` pattern and calls `convert_date_to_z()` to convert the datetime to UTC, rewriting the line in the standard `Z`-suffix format:
+
+```
+DTSTART:20060101T170000Z
+DTEND:20060101T180000Z
+```
+
+The conversion uses `dateutil.parser.parse` to read the local datetime and `pytz.timezone` to apply the correct UTC offset, including daylight-saving adjustments. The resulting UTC datetime is then parsed by `_parse_date()` using the fixed format `%Y%m%dT%H%M%SZ`.
+
+<Note>
+  The `pytz` and `python-dateutil` packages must be installed in your Odoo environment. Add them to your `requirements.txt` or install them with `pip install pytz python-dateutil` before activating this module.
+</Note>
+
+## Security
+
+Access to the import wizard is governed by the **`calendar_import_ics.group_calendar_import`** security group. Members of this group receive full read/write/create/unlink permissions on the `calendar.import.ics` transient model, as defined in `security/ir.model.access.csv`.
+
+---
+
+**Module metadata**
+
+| Field      | Value |
+|------------|-------|
+| Module     | `calendar_import_ics` |
+| Version    | 18.0.1.0.1 |
+| Author     | ForgeFlow S.L. / Odoo Community Association (OCA) |
+| License    | AGPL-3 |
+| Repository | [OCA/calendar](https://github.com/OCA/calendar) |

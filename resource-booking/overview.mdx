@@ -1,0 +1,86 @@
+---
+title: "Resource Booking: Appointments & Scheduling"
+sidebarTitle: "Overview"
+description: "Resource Booking is an OCA Odoo 18.0 add-on for scheduling appointments, managing bookable resource combinations, and automating conflict detection."
+---
+
+Resource Booking is a standalone Odoo application that adds a complete appointment and resource reservation system to your instance. It lets you define rules for what can be booked, which resources must be free simultaneously, and how slots are offered to requesters — all without relying on a third-party scheduling service. Customers can self-schedule via the customer portal, while backend users manage everything from the standard Odoo interface.
+
+## Use Cases
+
+<CardGroup cols={2}>
+  <Card title="Clinic Consultations" icon="stethoscope">
+    Book a doctor and an examination room together. Both resources must be free before the slot is offered.
+  </Card>
+  <Card title="Salesperson Appointments" icon="handshake">
+    Invite a prospect to pick an open time slot from a salesperson's calendar. No phone tag required.
+  </Card>
+  <Card title="Classroom & Projector Reservations" icon="chalkboard-user">
+    Reserve a classroom and its projector as a single combination. Neither resource can be double-booked.
+  </Card>
+  <Card title="Hotel Room Booking" icon="bed">
+    Manage availability across multiple room types, with configurable duration, capacity, and availability calendars.
+  </Card>
+</CardGroup>
+
+## Core Concepts
+
+Understanding these four building blocks makes the rest of the module intuitive.
+
+**Booking Type** — the master configuration record. It defines the booking duration, the slot interval offered to requesters, the availability calendar that constrains when bookings are allowed, the combination-assignment policy, and optional defaults such as reminders, event tags, and location. Every booking belongs to exactly one booking type.
+
+**Resource Combination** — a named group of `resource.resource` records that must all be free simultaneously for a booking to be placed. A combination's name is auto-generated from the names of its member resources. A combination can belong to multiple booking types, and a booking type can have many combinations available.
+
+**Booking** — a single reservation that links a requester partner (or multiple attendees), one resource combination, and a specific date-time interval. Creating a booking and setting a start time automatically creates a linked `calendar.event`, adding all relevant parties as attendees.
+
+**Availability Engine** — the logic that intersects the booking type's work calendar with the individual work calendars of every resource in a combination. It respects calendar leaves, honors public holidays (when `hr_holidays` is installed), and excludes time already occupied by other confirmed calendar events. This engine powers both the slot picker in the portal and the conflict-detection constraint that fires on every save.
+
+## Booking Lifecycle
+
+A booking moves through four states. The transition is computed automatically from the record's data — there is no manual state button required for the happy path.
+
+```
+pending → scheduled → confirmed → canceled
+```
+
+| State | Meaning |
+|-------|---------|
+| **pending** | The booking exists but no meeting has been scheduled yet. The requester has been given access to pick a slot. |
+| **scheduled** | A `calendar.event` has been created and a start time is set, but the requester attendee has not yet accepted the calendar invitation. |
+| **confirmed** | The meeting exists **and** the requester's attendee record shows `state = accepted`. This is the fully confirmed state. |
+| **canceled** | The booking has been archived (`active = False`). The linked meeting is deleted, and the access token is invalidated. |
+
+## Dependencies
+
+Resource Booking requires the following Odoo modules to be present in your instance before installation.
+
+**Required modules**
+
+- `calendar` — core calendar events and attendees
+- `mail` — chatter, followers, and email notifications
+- `portal` — customer portal infrastructure and access tokens
+- `resource` — `resource.resource` and `resource.calendar` models
+- `web_calendar_slot_duration` — calendar view enhancement that renders slots at the configured duration
+
+**Optional modules** (enable extra features when installed)
+
+- `hr` — links `resource.resource` records to employees
+- `hr_holidays` — respects employee time-off leaves in availability calculation
+- `mrp` — enables booking of manufacturing resources
+
+<Warning>
+  The `web_calendar_slot_duration` module is **required** and must be installed alongside Resource Booking. It is not part of Odoo's standard addons and must be sourced from the OCA `web` repository. The calendar slot view will not function correctly without it.
+</Warning>
+
+## Module Metadata
+
+| Field | Value |
+|-------|-------|
+| Technical name | `resource_booking` |
+| Version | 18.0.1.0.14 |
+| Development status | Production / Stable |
+| Category | Appointments |
+| Authors | Tecnativa, Odoo Community Association (OCA) |
+| Maintainers | pedrobaeza, ows-cloud |
+| License | AGPL-3.0 |
+| Repository | [OCA/calendar](https://github.com/OCA/calendar) |
